@@ -13,7 +13,8 @@ let clients = [];
 app.use(cors({
     origin: [
         'https://qr-bestelpagina-eink05urg-oalogics-projects.vercel.app',
-        'https://bfe5-143-179-158-36.ngrok-free.app'
+        'https://bfe5-143-179-158-36.ngrok-free.app',
+        'https://bestel-backend.onrender.com'
     ],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
