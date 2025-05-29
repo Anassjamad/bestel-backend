@@ -12,7 +12,7 @@ let clients = [];
 // CORS configuratie
 app.use(cors({
     origin: [
-        'https://qr-bestelpagina-eink05urg-oalogics-projects.vercel.app',
+        'https://qr-bestelpagina.vercel.app',
         'https://bfe5-143-179-158-36.ngrok-free.app',
         'https://bestel-backend.onrender.com'
     ],
