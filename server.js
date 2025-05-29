@@ -14,7 +14,8 @@ app.use(cors({
     origin: [
         'https://qr-bestelpagina.vercel.app',
         'https://bfe5-143-179-158-36.ngrok-free.app',
-        'https://bestel-backend.onrender.com'
+        'https://bestel-backend.onrender.com',
+        'https://admin-page-psi-ten.vercel.app' // ⬅️ Voeg dit toe
     ],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
