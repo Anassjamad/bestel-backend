@@ -15,14 +15,13 @@ app.use(cors({
         'https://qr-bestelpagina.vercel.app',
         'https://bfe5-143-179-158-36.ngrok-free.app',
         'https://bestel-backend.onrender.com',
-        'https://admin-page-psi-ten.vercel.app' // ⬅️ Voeg dit toe
+        'https://admin-page-psi-ten.vercel.app'
     ],
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
 
-// Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -31,16 +30,17 @@ mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('✅ Verbonden met MongoDB'))
     .catch(err => console.log('⛔ MongoDB fout:', err));
 
-// Mongoose model
+// Mongoose model met STATUS
 const Order = mongoose.model('Order', new mongoose.Schema({
     orderId: { type: String, required: true },
     item: { type: String, required: true },
     quantity: { type: Number, required: true },
     opmerking: { type: String },
+    status: { type: String, default: 'Nieuw' }, // ✅ Nieuw veld
     createdAt: { type: Date, default: Date.now }
 }));
 
-// Functie om SSE notificatie te sturen
+// SSE notificatie
 function sendNewOrderNotification(order) {
     console.log('🔔 SSE notificatie aan', clients.length, 'clients');
     clients.forEach(res => {
@@ -48,32 +48,27 @@ function sendNewOrderNotification(order) {
     });
 }
 
-// SSE route voor admin
+// SSE voor live updates
 app.get('/admin/notifications', (req, res) => {
-    console.log('🔄 Verzoek ontvangen op /admin/notifications');
-
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
     clients.push(res);
-    console.log('✅ Nieuwe SSE client verbonden. Totaal clients:', clients.length);
+    console.log('✅ SSE client verbonden. Totaal:', clients.length);
 
     req.on('close', () => {
         clients = clients.filter(client => client !== res);
-        console.log('❌ SSE client verbroken. Huidige aantal:', clients.length);
+        console.log('❌ SSE client verbroken. Resterend:', clients.length);
     });
 });
 
 // Bestelling plaatsen
 app.post('/order', async (req, res) => {
-    console.log('📥 Nieuw bestelling ontvangen:', req.body);
-
     const { item, quantity, opmerking } = req.body;
 
     if (!item || !quantity) {
-        console.log('⚠️ Bestelling geweigerd – ontbrekende velden.');
         return res.status(400).json({ message: '⛔ Item en quantity zijn verplicht.' });
     }
 
@@ -82,14 +77,15 @@ app.post('/order', async (req, res) => {
     try {
         const order = new Order({ orderId, item, quantity, opmerking });
         await order.save();
-        console.log('✅ Bestelling opgeslagen in database:', orderId);
 
+        // Stuur notificatie met status mee
         sendNewOrderNotification({
             orderId,
             item,
             quantity,
             opmerking,
-            createdAt: order.createdAt
+            createdAt: order.createdAt,
+            status: order.status
         });
 
         res.json({
@@ -105,32 +101,50 @@ app.post('/order', async (req, res) => {
     }
 });
 
-// Admin pagina (optioneel: serveer statisch, of zo)
+// ✅ PATCH: Status van bestelling aanpassen
+app.patch('/admin/order/:orderId/status', async (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+        return res.status(400).json({ message: '⛔ Status is verplicht.' });
+    }
+
+    try {
+        const order = await Order.findOneAndUpdate(
+            { orderId },
+            { status },
+            { new: true }
+        );
+
+        if (!order) {
+            return res.status(404).json({ message: '❌ Bestelling niet gevonden.' });
+        }
+
+        console.log(`🔄 Status van ${orderId} aangepast naar: ${status}`);
+        res.json({ message: '✅ Status geüpdatet', status });
+    } catch (err) {
+        console.error('❌ Fout bij status update:', err);
+        res.status(500).json({ message: '⛔ Interne serverfout' });
+    }
+});
+
+// Admin data als HTML-tabel (alleen nodig voor oude versie)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
 
         let html = `
-            <html>
-            <head>
-                <title>Bestellingen</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; }
-                    th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
-                    th { background-color: #f4f4f4; }
-                </style>
-            </head>
-            <body>
-                <h2>Alle Bestellingen (Live Update)</h2>
-                <table id="ordersTable">
-                    <tr>
-                        <th>Order ID</th>
-                        <th>Item</th>
-                        <th>Aantal</th>
-                        <th>Opmerking</th>
-                        <th>Tijd</th>
-                    </tr>`;
+            <table>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Item</th>
+                    <th>Aantal</th>
+                    <th>Opmerking</th>
+                    <th>Tijd</th>
+                    <th>Status</th>
+                </tr>
+        `;
 
         orders.forEach(order => {
             html += `
@@ -139,47 +153,19 @@ app.get('/admin', async (req, res) => {
                     <td>${order.item}</td>
                     <td>${order.quantity}</td>
                     <td>${order.opmerking || ''}</td>
-                    <td>${new Date(order.createdAt).toLocaleString('nl-NL')}</td>
+                    <td>${new Date(order.createdAt).toISOString()}</td>
+                    <td>${order.status || 'Nieuw'}</td>
                 </tr>`;
         });
 
-        html += `
-                </table>
-                <script>
-                    const evtSource = new EventSource('/admin/notifications');
-
-                    evtSource.onopen = () => {
-                        console.log('✅ SSE verbinding geopend');
-                    };
-
-                    evtSource.onerror = (e) => {
-                        console.error('❌ SSE fout:', e);
-                    };
-
-                    evtSource.onmessage = function(event) {
-                        const order = JSON.parse(event.data);
-                        const row = document.createElement('tr');
-                        row.innerHTML = \`
-                            <td>\${order.orderId}</td>
-                            <td>\${order.item}</td>
-                            <td>\${order.quantity}</td>
-                            <td>\${order.opmerking || ''}</td>
-                            <td>\${new Date(order.createdAt).toLocaleString('nl-NL')}</td>
-                        \`;
-                        document.getElementById('ordersTable').appendChild(row);
-                    };
-                </script>
-            </body>
-            </html>`;
-
+        html += '</table>';
         res.send(html);
-    } catch (error) {
-        console.error(error);
+    } catch (err) {
         res.status(500).send('❌ Fout bij ophalen van bestellingen.');
     }
 });
 
-// Start server
+// Server starten
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
     console.log(`🚀 Server draait op http://localhost:${port}`);
