@@ -30,17 +30,25 @@ mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('✅ Verbonden met MongoDB'))
     .catch(err => console.log('⛔ MongoDB fout:', err));
 
-// Mongoose model met STATUS
+// Order model
 const Order = mongoose.model('Order', new mongoose.Schema({
     orderId: { type: String, required: true },
     item: { type: String, required: true },
     quantity: { type: Number, required: true },
     opmerking: { type: String },
-    status: { type: String, default: 'Nieuw' }, // ✅ Nieuw veld
+    status: { type: String, default: 'Nieuw' },
     createdAt: { type: Date, default: Date.now }
 }));
 
-// SSE notificatie
+// Product model
+const Product = mongoose.model('Product', new mongoose.Schema({
+    naam: { type: String, required: true },
+    prijs: { type: Number, required: true },
+    image: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+}));
+
+// SSE notificatie functie
 function sendNewOrderNotification(order) {
     console.log('🔔 SSE notificatie aan', clients.length, 'clients');
     clients.forEach(res => {
@@ -48,7 +56,7 @@ function sendNewOrderNotification(order) {
     });
 }
 
-// SSE voor live updates
+// SSE endpoint voor admin live updates
 app.get('/admin/notifications', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -64,7 +72,7 @@ app.get('/admin/notifications', (req, res) => {
     });
 });
 
-// Bestelling plaatsen
+// POST: Bestelling plaatsen
 app.post('/order', async (req, res) => {
     const { item, quantity, opmerking } = req.body;
 
@@ -78,7 +86,6 @@ app.post('/order', async (req, res) => {
         const order = new Order({ orderId, item, quantity, opmerking });
         await order.save();
 
-        // Stuur notificatie met status mee
         sendNewOrderNotification({
             orderId,
             item,
@@ -101,7 +108,7 @@ app.post('/order', async (req, res) => {
     }
 });
 
-// ✅ PATCH: Status van bestelling aanpassen
+// PATCH: Status van bestelling aanpassen
 app.patch('/admin/order/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -129,7 +136,7 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
     }
 });
 
-// Admin data als HTML-tabel (alleen nodig voor oude versie)
+// GET: Alle bestellingen (HTML-tabel)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
@@ -162,6 +169,35 @@ app.get('/admin', async (req, res) => {
         res.send(html);
     } catch (err) {
         res.status(500).send('❌ Fout bij ophalen van bestellingen.');
+    }
+});
+
+// ✅ NIEUW: GET /products - alle producten ophalen
+app.get('/products', async (req, res) => {
+    try {
+        const producten = await Product.find().sort({ createdAt: -1 });
+        res.json(producten);
+    } catch (error) {
+        console.error('❌ Fout bij ophalen van producten:', error);
+        res.status(500).json({ message: '⛔ Fout bij ophalen van producten.' });
+    }
+});
+
+// ✅ NIEUW: POST /products - nieuw product toevoegen
+app.post('/products', async (req, res) => {
+    const { naam, prijs, image } = req.body;
+
+    if (!naam || !prijs || !image) {
+        return res.status(400).json({ message: '⛔ Naam, prijs en image zijn verplicht.' });
+    }
+
+    try {
+        const product = new Product({ naam, prijs, image });
+        await product.save();
+        res.json({ message: '✅ Product succesvol toegevoegd!', product });
+    } catch (error) {
+        console.error('❌ Fout bij toevoegen product:', error);
+        res.status(500).json({ message: '⛔ Fout bij opslaan van product.' });
     }
 });
 
