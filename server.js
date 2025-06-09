@@ -13,7 +13,7 @@ app.use(cors({
         'https://qr-bestelpagina.vercel.app',
         'https://bfe5-143-179-158-36.ngrok-free.app',
         'https://bestel-backend.onrender.com',
-        'https://adminoa.vercel.app/'
+        'https://adminoa.vercel.app'
     ],
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
