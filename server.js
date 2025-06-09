@@ -5,11 +5,9 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-
-// SSE clients array
 let clients = [];
 
-// CORS configuratie
+// ✅ CORS instellingen
 app.use(cors({
     origin: [
         'https://qr-bestelpagina.vercel.app',
@@ -25,38 +23,37 @@ app.use(cors({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB verbinding
+// ✅ MongoDB verbinding
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('✅ Verbonden met MongoDB'))
-    .catch(err => console.log('⛔ MongoDB fout:', err));
+    .catch(err => console.error('⛔ MongoDB fout:', err));
 
-// Order model
+// ✅ MODELLEN
+
 const Order = mongoose.model('Order', new mongoose.Schema({
     orderId: { type: String, required: true },
-    item: { type: String, required: true },
-    quantity: { type: Number, required: true },
-    opmerking: { type: String },
+    producten: [{
+        item: { type: String, required: true },
+        quantity: { type: Number, required: true },
+        opmerking: { type: String }
+    }],
     status: { type: String, default: 'Nieuw' },
     createdAt: { type: Date, default: Date.now }
 }));
 
-// Product model
 const Product = mongoose.model('Product', new mongoose.Schema({
     naam: { type: String, required: true },
     prijs: { type: Number, required: true },
-    image: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now }
+    image: { type: String, default: '' }
 }));
 
-// SSE notificatie functie
+// 📡 SSE voor live bestellingen
 function sendNewOrderNotification(order) {
-    console.log('🔔 SSE notificatie aan', clients.length, 'clients');
     clients.forEach(res => {
         res.write(`data: ${JSON.stringify(order)}\n\n`);
     });
 }
 
-// SSE endpoint voor admin live updates
 app.get('/admin/notifications', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -64,51 +61,32 @@ app.get('/admin/notifications', (req, res) => {
     res.flushHeaders();
 
     clients.push(res);
-    console.log('✅ SSE client verbonden. Totaal:', clients.length);
-
     req.on('close', () => {
         clients = clients.filter(client => client !== res);
-        console.log('❌ SSE client verbroken. Resterend:', clients.length);
     });
 });
 
-// POST: Bestelling plaatsen
+// 📬 Bestelling plaatsen (meerdere producten)
 app.post('/order', async (req, res) => {
-    const { item, quantity, opmerking } = req.body;
+    const { producten } = req.body;
 
-    if (!item || !quantity) {
-        return res.status(400).json({ message: '⛔ Item en quantity zijn verplicht.' });
+    if (!producten || !Array.isArray(producten) || producten.length === 0) {
+        return res.status(400).json({ message: '⛔ Productlijst is verplicht.' });
     }
 
     const orderId = 'ORD-' + Date.now();
 
     try {
-        const order = new Order({ orderId, item, quantity, opmerking });
+        const order = new Order({ orderId, producten });
         await order.save();
-
-        sendNewOrderNotification({
-            orderId,
-            item,
-            quantity,
-            opmerking,
-            createdAt: order.createdAt,
-            status: order.status
-        });
-
-        res.json({
-            message: '✅ Bestelling succesvol opgeslagen!',
-            orderId,
-            item,
-            quantity,
-            opmerking
-        });
-    } catch (error) {
-        console.error('❌ Fout bij opslaan bestelling:', error);
-        res.status(500).json({ message: '⛔ Fout bij opslaan van bestelling.' });
+        sendNewOrderNotification(order);
+        res.json({ message: '✅ Bestelling opgeslagen', order });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij bestelling', error: err.message });
     }
 });
 
-// PATCH: Status van bestelling aanpassen
+// ✅ PATCH: Status aanpassen
 app.patch('/admin/order/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -124,45 +102,35 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
             { new: true }
         );
 
-        if (!order) {
-            return res.status(404).json({ message: '❌ Bestelling niet gevonden.' });
-        }
+        if (!order) return res.status(404).json({ message: '❌ Bestelling niet gevonden.' });
 
-        console.log(`🔄 Status van ${orderId} aangepast naar: ${status}`);
         res.json({ message: '✅ Status geüpdatet', status });
     } catch (err) {
-        console.error('❌ Fout bij status update:', err);
-        res.status(500).json({ message: '⛔ Interne serverfout' });
+        res.status(500).json({ message: '⛔ Interne fout', error: err.message });
     }
 });
 
-// GET: Alle bestellingen (HTML-tabel)
+// 🧾 Admin bestellingen (HTML overzicht)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
 
-        let html = `
-            <table>
-                <tr>
-                    <th>Order ID</th>
-                    <th>Item</th>
-                    <th>Aantal</th>
-                    <th>Opmerking</th>
-                    <th>Tijd</th>
-                    <th>Status</th>
-                </tr>
-        `;
+        let html = `<table><tr>
+            <th>Order ID</th><th>Item</th><th>Aantal</th>
+            <th>Opmerking</th><th>Tijd</th><th>Status</th>
+        </tr>`;
 
         orders.forEach(order => {
-            html += `
-                <tr>
+            order.producten.forEach(product => {
+                html += `<tr>
                     <td>${order.orderId}</td>
-                    <td>${order.item}</td>
-                    <td>${order.quantity}</td>
-                    <td>${order.opmerking || ''}</td>
-                    <td>${new Date(order.createdAt).toISOString()}</td>
-                    <td>${order.status || 'Nieuw'}</td>
+                    <td>${product.item}</td>
+                    <td>${product.quantity}</td>
+                    <td>${product.opmerking || ''}</td>
+                    <td>${new Date(order.createdAt).toLocaleString()}</td>
+                    <td>${order.status}</td>
                 </tr>`;
+            });
         });
 
         html += '</table>';
@@ -172,36 +140,34 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// ✅ NIEUW: GET /products - alle producten ophalen
-app.get('/products', async (req, res) => {
-    try {
-        const producten = await Product.find().sort({ createdAt: -1 });
-        res.json(producten);
-    } catch (error) {
-        console.error('❌ Fout bij ophalen van producten:', error);
-        res.status(500).json({ message: '⛔ Fout bij ophalen van producten.' });
-    }
-});
-
-// ✅ NIEUW: POST /products - nieuw product toevoegen
-app.post('/products', async (req, res) => {
+// 📦 Producten toevoegen
+app.post('/admin/product', async (req, res) => {
     const { naam, prijs, image } = req.body;
 
-    if (!naam || !prijs || !image) {
-        return res.status(400).json({ message: '⛔ Naam, prijs en image zijn verplicht.' });
+    if (!naam || !prijs) {
+        return res.status(400).json({ message: '⛔ Naam en prijs zijn verplicht.' });
     }
 
     try {
         const product = new Product({ naam, prijs, image });
         await product.save();
-        res.json({ message: '✅ Product succesvol toegevoegd!', product });
-    } catch (error) {
-        console.error('❌ Fout bij toevoegen product:', error);
-        res.status(500).json({ message: '⛔ Fout bij opslaan van product.' });
+        res.json({ message: '✅ Product toegevoegd', product });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij toevoegen product', error: err.message });
     }
 });
 
-// Server starten
+// 📦 Producten ophalen
+app.get('/products', async (req, res) => {
+    try {
+        const producten = await Product.find().sort({ naam: 1 });
+        res.json(producten);
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Kan producten niet ophalen.' });
+    }
+});
+
+// 🔌 Server starten
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
     console.log(`🚀 Server draait op http://localhost:${port}`);
