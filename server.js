@@ -30,7 +30,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // ✅ MODELLEN
 
-const Order = mongoose.model('Order', new mongoose.Schema({
+const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
     producten: [{
         item: { type: String, required: true },
@@ -39,7 +39,9 @@ const Order = mongoose.model('Order', new mongoose.Schema({
     }],
     status: { type: String, default: 'Nieuw' },
     createdAt: { type: Date, default: Date.now }
-}));
+});
+
+const Order = mongoose.model('Order', OrderSchema);
 
 const Product = mongoose.model('Product', new mongoose.Schema({
     naam: { type: String, required: true },
@@ -61,6 +63,7 @@ app.get('/admin/notifications', (req, res) => {
     res.flushHeaders();
 
     clients.push(res);
+
     req.on('close', () => {
         clients = clients.filter(client => client !== res);
     });
@@ -79,7 +82,10 @@ app.post('/order', async (req, res) => {
     try {
         const order = new Order({ orderId, producten });
         await order.save();
+
+        // Verstuur notificatie via SSE
         sendNewOrderNotification(order);
+
         res.json({ message: '✅ Bestelling opgeslagen', order });
     } catch (err) {
         res.status(500).json({ message: '⛔ Fout bij bestelling', error: err.message });
@@ -110,7 +116,7 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
     }
 });
 
-// 🧾 Admin bestellingen (HTML overzicht)
+// 🧾 Admin bestellingen overzicht (HTML)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
@@ -137,6 +143,31 @@ app.get('/admin', async (req, res) => {
         res.send(html);
     } catch (err) {
         res.status(500).send('❌ Fout bij ophalen van bestellingen.');
+    }
+});
+
+// ✅ Nieuwe endpoint: Bestellingen op datum ophalen
+app.get('/admin/orders-by-date', async (req, res) => {
+    const { date } = req.query;
+
+    if (!date) {
+        return res.status(400).json({ message: '⛔ Datum is verplicht als query parameter (YYYY-MM-DD).' });
+    }
+
+    try {
+        // Parse de datum en stel tijdsrange in voor hele dag
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(date);
+        end.setHours(23, 59, 59, 999);
+
+        const orders = await Order.find({
+            createdAt: { $gte: start, $lte: end }
+        }).sort({ createdAt: 1 });
+
+        res.json(orders);
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij ophalen bestellingen op datum.', error: err.message });
     }
 });
 
