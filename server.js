@@ -1,4 +1,5 @@
-﻿const express = require('express');
+﻿// 📦 Benodigde modules
+const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 const path = require('path');
@@ -7,7 +8,7 @@ const cors = require('cors');
 const app = express();
 let clients = [];
 
-// ✅ CORS instellingen
+// ✅ CORS-instellingen
 app.use(cors({
     origin: [
         'https://qr-bestelpagina.vercel.app',
@@ -15,7 +16,7 @@ app.use(cors({
         'https://bestel-backend.onrender.com',
         'https://adminoa.vercel.app'
     ],
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
@@ -23,12 +24,12 @@ app.use(cors({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ MongoDB verbinding
+// ✅ MongoDB-verbinding
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('✅ Verbonden met MongoDB'))
     .catch(err => console.error('⛔ MongoDB fout:', err));
 
-// ✅ MODELLEN
+// ✅ Mongoose modellen
 
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
@@ -69,7 +70,7 @@ app.get('/admin/notifications', (req, res) => {
     });
 });
 
-// 📬 Bestelling plaatsen (meerdere producten)
+// 📬 Bestelling plaatsen
 app.post('/order', async (req, res) => {
     const { producten } = req.body;
 
@@ -92,7 +93,7 @@ app.post('/order', async (req, res) => {
     }
 });
 
-// ✅ PATCH: Status aanpassen
+// 🔄 Status van bestelling aanpassen
 app.patch('/admin/order/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -116,7 +117,7 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
     }
 });
 
-// 🧾 Admin bestellingen overzicht (HTML)
+// 📄 Admin HTML overzicht (optioneel)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
@@ -146,7 +147,7 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// ✅ Nieuwe endpoint: Bestellingen op datum ophalen
+// 📅 Bestellingen ophalen op datum
 app.get('/admin/orders-by-date', async (req, res) => {
     const { date } = req.query;
 
@@ -155,7 +156,6 @@ app.get('/admin/orders-by-date', async (req, res) => {
     }
 
     try {
-        // Parse de datum en stel tijdsrange in voor hele dag
         const start = new Date(date);
         start.setHours(0, 0, 0, 0);
         const end = new Date(date);
@@ -171,7 +171,7 @@ app.get('/admin/orders-by-date', async (req, res) => {
     }
 });
 
-// 📦 Producten toevoegen
+// 🆕 Product toevoegen
 app.post('/admin/product', async (req, res) => {
     const { naam, prijs, image } = req.body;
 
@@ -188,7 +188,7 @@ app.post('/admin/product', async (req, res) => {
     }
 });
 
-// 📦 Producten ophalen
+// 📋 Producten ophalen
 app.get('/products', async (req, res) => {
     try {
         const producten = await Product.find().sort({ naam: 1 });
@@ -198,7 +198,21 @@ app.get('/products', async (req, res) => {
     }
 });
 
-// 🔌 Server starten
+// 🗑️ Product verwijderen
+app.delete('/admin/product/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleted = await Product.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({ message: '❌ Product niet gevonden.' });
+        }
+        res.json({ message: '✅ Product verwijderd' });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij verwijderen product', error: err.message });
+    }
+});
+
+// 🚀 Server starten
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
     console.log(`🚀 Server draait op http://localhost:${port}`);
