@@ -33,6 +33,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
+    tafel: { type: String }, 
     producten: [{
         item: { type: String, required: true },
         quantity: { type: Number, required: true },
@@ -72,7 +73,7 @@ app.get('/admin/notifications', (req, res) => {
 
 // 📬 Bestelling plaatsen
 app.post('/order', async (req, res) => {
-    const { producten } = req.body;
+    const { producten, tafel } = req.body;
 
     if (!producten || !Array.isArray(producten) || producten.length === 0) {
         return res.status(400).json({ message: '⛔ Productlijst is verplicht.' });
@@ -81,17 +82,16 @@ app.post('/order', async (req, res) => {
     const orderId = 'ORD-' + Date.now();
 
     try {
-        const order = new Order({ orderId, producten });
+        const order = new Order({ orderId, producten, tafel }); // ✅ tafel opslaan
         await order.save();
 
-        // Verstuur notificatie via SSE
         sendNewOrderNotification(order);
-
         res.json({ message: '✅ Bestelling opgeslagen', order });
     } catch (err) {
         res.status(500).json({ message: '⛔ Fout bij bestelling', error: err.message });
     }
 });
+
 
 // 🔄 Status van bestelling aanpassen
 app.patch('/admin/order/:orderId/status', async (req, res) => {
