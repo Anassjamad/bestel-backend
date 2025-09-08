@@ -61,6 +61,7 @@ function sendNewOrderNotification(order) {
         orderId: order.orderId,
         producten: order.producten,
         status: order.status,
+        tafel: order.tafel, // ✅ tafel wordt nu meegestuurd
         tafel: order.tafel,
         createdAt: order.createdAt
     };
@@ -228,54 +229,40 @@ app.delete('/admin/product/:id', async (req, res) => {
     }
 });
 
-// 🆕 NIEUW: Tafels ophalen
-app.get('/admin/tables', async (req, res) => {
+// 🛠️ NIEUW: GET aantal tafels ophalen
+app.get('/admin/tafel-aantal', async (req, res) => {
     try {
-        const tables = await Table.find().sort({ nummer: 1 });
-        res.json(tables);
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij ophalen tafels', error: err.message });
-    }
-});
-
-// 🆕 NIEUW: Nieuwe tafel toevoegen
-app.post('/admin/table', async (req, res) => {
-    const { nummer } = req.body;
-
-    if (typeof nummer !== 'number' || nummer < 1) {
-        return res.status(400).json({ message: '⛔ Ongeldig tafelnummer' });
-    }
-
-    try {
-        // Check of tafelnummer al bestaat
-        const bestaat = await Table.findOne({ nummer });
-        if (bestaat) {
-            return res.status(400).json({ message: '⛔ Tafelnummer bestaat al' });
+        let config = await Config.findOne();
+        if (!config) {
+            config = new Config(); // default 10
+            await config.save();
         }
-
-        const table = new Table({ nummer });
-        await table.save();
-
-        res.status(201).json({ message: '✅ Tafel toegevoegd', table });
+        res.json({ aantalTafels: config.aantalTafels });
     } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij toevoegen tafel', error: err.message });
+        res.status(500).json({ message: '⛔ Fout bij ophalen aantal tafels', error: err.message });
     }
 });
 
-// 🆕 NIEUW: Tafel verwijderen
-app.delete('/admin/table/:id', async (req, res) => {
-    const { id } = req.params;
+// 🛠️ NIEUW: PATCH aantal tafels aanpassen
+app.patch('/admin/tafel-aantal', async (req, res) => {
+    const { aantalTafels } = req.body;
+    if (typeof aantalTafels !== 'number' || aantalTafels < 1) {
+        return res.status(400).json({ message: '⛔ Ongeldig aantal tafels opgegeven.' });
+    }
+
     try {
-        const deleted = await Table.findByIdAndDelete(id);
-        if (!deleted) {
-            return res.status(404).json({ message: '❌ Tafel niet gevonden' });
+        let config = await Config.findOne();
+        if (!config) {
+            config = new Config({ aantalTafels });
+        } else {
+            config.aantalTafels = aantalTafels;
         }
-        res.json({ message: '✅ Tafel verwijderd' });
+        await config.save();
+        res.json({ message: '✅ Aantal tafels geüpdatet', aantalTafels });
     } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij verwijderen tafel', error: err.message });
+        res.status(500).json({ message: '⛔ Fout bij updaten aantal tafels', error: err.message });
     }
 });
-
 
 // 🚀 Server starten
 const port = process.env.PORT || 5000;
