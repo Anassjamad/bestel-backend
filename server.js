@@ -40,7 +40,6 @@ const OrderSchema = new mongoose.Schema({
     status: { type: String, default: 'Nieuw' },
     createdAt: { type: Date, default: Date.now }
 });
-
 const Order = mongoose.model('Order', OrderSchema);
 
 const Product = mongoose.model('Product', new mongoose.Schema({
@@ -49,13 +48,19 @@ const Product = mongoose.model('Product', new mongoose.Schema({
     image: { type: String, default: '' }
 }));
 
+// 🔧 Nieuw model voor config (aantal tafels)
+const ConfigSchema = new mongoose.Schema({
+    aantalTafels: { type: Number, required: true, default: 10 }
+});
+const Config = mongoose.model('Config', ConfigSchema);
+
 // 📡 Server-Sent Events (SSE)
 function sendNewOrderNotification(order) {
     const data = {
         orderId: order.orderId,
         producten: order.producten,
         status: order.status,
-        tafel: order.tafel, // ✅ tafel wordt nu meegestuurd
+        tafel: order.tafel,
         createdAt: order.createdAt
     };
     clients.forEach(res => {
@@ -82,6 +87,11 @@ app.post('/order', async (req, res) => {
 
     if (!producten || !Array.isArray(producten) || producten.length === 0) {
         return res.status(400).json({ message: '⛔ Productlijst is verplicht.' });
+    }
+
+    // Optioneel: check dat tafel een geldige waarde heeft (string of nummer)
+    if (!tafel || tafel === '') {
+        return res.status(400).json({ message: '⛔ Tafelnummer is verplicht.' });
     }
 
     const orderId = 'ORD-' + Date.now();
@@ -214,6 +224,41 @@ app.delete('/admin/product/:id', async (req, res) => {
         res.json({ message: '✅ Product verwijderd' });
     } catch (err) {
         res.status(500).json({ message: '⛔ Fout bij verwijderen product', error: err.message });
+    }
+});
+
+// 🛠️ NIEUW: GET aantal tafels ophalen
+app.get('/admin/tafel-aantal', async (req, res) => {
+    try {
+        let config = await Config.findOne();
+        if (!config) {
+            config = new Config(); // default 10
+            await config.save();
+        }
+        res.json({ aantalTafels: config.aantalTafels });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij ophalen aantal tafels', error: err.message });
+    }
+});
+
+// 🛠️ NIEUW: PATCH aantal tafels aanpassen
+app.patch('/admin/tafel-aantal', async (req, res) => {
+    const { aantalTafels } = req.body;
+    if (typeof aantalTafels !== 'number' || aantalTafels < 1) {
+        return res.status(400).json({ message: '⛔ Ongeldig aantal tafels opgegeven.' });
+    }
+
+    try {
+        let config = await Config.findOne();
+        if (!config) {
+            config = new Config({ aantalTafels });
+        } else {
+            config.aantalTafels = aantalTafels;
+        }
+        await config.save();
+        res.json({ message: '✅ Aantal tafels geüpdatet', aantalTafels });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij updaten aantal tafels', error: err.message });
     }
 });
 
