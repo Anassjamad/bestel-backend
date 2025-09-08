@@ -1,14 +1,14 @@
 ﻿// 📦 Benodigde modules
 const express = require('express');
 const mongoose = require('mongoose');
-require('dotenv').config();
 const path = require('path');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
 let clients = [];
 
-// ✅ CORS-instellingen
+// ✅ Middleware
 app.use(cors({
     origin: [
         'https://qr-bestelpagina.vercel.app',
@@ -20,20 +20,18 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
-
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ MongoDB-verbinding
+// ✅ MongoDB verbinden
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('✅ Verbonden met MongoDB'))
     .catch(err => console.error('⛔ MongoDB fout:', err));
 
 // ✅ Mongoose modellen
-
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
-    tafel: { type: String }, 
+    tafel: { type: String }, // ✅ tafel wordt opgeslagen
     producten: [{
         item: { type: String, required: true },
         quantity: { type: Number, required: true },
@@ -51,10 +49,17 @@ const Product = mongoose.model('Product', new mongoose.Schema({
     image: { type: String, default: '' }
 }));
 
-// 📡 SSE voor live bestellingen
+// 📡 Server-Sent Events (SSE)
 function sendNewOrderNotification(order) {
+    const data = {
+        orderId: order.orderId,
+        producten: order.producten,
+        status: order.status,
+        tafel: order.tafel, // ✅ tafel wordt nu meegestuurd
+        createdAt: order.createdAt
+    };
     clients.forEach(res => {
-        res.write(`data: ${JSON.stringify(order)}\n\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
     });
 }
 
@@ -82,7 +87,7 @@ app.post('/order', async (req, res) => {
     const orderId = 'ORD-' + Date.now();
 
     try {
-        const order = new Order({ orderId, producten, tafel }); // ✅ tafel opslaan
+        const order = new Order({ orderId, producten, tafel });
         await order.save();
 
         sendNewOrderNotification(order);
@@ -92,8 +97,7 @@ app.post('/order', async (req, res) => {
     }
 });
 
-
-// 🔄 Status van bestelling aanpassen
+// 🔄 Status bijwerken
 app.patch('/admin/order/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -117,13 +121,13 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
     }
 });
 
-// 📄 Admin HTML overzicht (optioneel)
+// 📋 Admin overzicht (optioneel)
 app.get('/admin', async (req, res) => {
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
 
-        let html = `<table><tr>
-            <th>Order ID</th><th>Item</th><th>Aantal</th>
+        let html = `<table border="1"><tr>
+            <th>Order ID</th><th>Tafel</th><th>Item</th><th>Aantal</th>
             <th>Opmerking</th><th>Tijd</th><th>Status</th>
         </tr>`;
 
@@ -131,6 +135,7 @@ app.get('/admin', async (req, res) => {
             order.producten.forEach(product => {
                 html += `<tr>
                     <td>${order.orderId}</td>
+                    <td>${order.tafel || ''}</td>
                     <td>${product.item}</td>
                     <td>${product.quantity}</td>
                     <td>${product.opmerking || ''}</td>
@@ -147,7 +152,7 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// 📅 Bestellingen ophalen op datum
+// 📅 Bestellingen op datum
 app.get('/admin/orders-by-date', async (req, res) => {
     const { date } = req.query;
 
