@@ -40,6 +40,7 @@ const OrderSchema = new mongoose.Schema({
     status: { type: String, default: 'Nieuw' },
     createdAt: { type: Date, default: Date.now }
 });
+
 const Order = mongoose.model('Order', OrderSchema);
 
 const Product = mongoose.model('Product', new mongoose.Schema({
@@ -53,12 +54,6 @@ const ConfigSchema = new mongoose.Schema({
     aantalTafels: { type: Number, required: true, default: 10 }
 });
 const Config = mongoose.model('Config', ConfigSchema);
-
-// 🆕 Nieuw model voor tafels
-const TableSchema = new mongoose.Schema({
-    nummer: { type: Number, required: true, unique: true }
-});
-const Table = mongoose.model('Table', TableSchema);
 
 // 📡 Server-Sent Events (SSE)
 function sendNewOrderNotification(order) {
@@ -233,41 +228,6 @@ app.delete('/admin/product/:id', async (req, res) => {
     }
 });
 
-// 🛠️ NIEUW: GET aantal tafels ophalen
-app.get('/admin/tafel-aantal', async (req, res) => {
-    try {
-        let config = await Config.findOne();
-        if (!config) {
-            config = new Config(); // default 10
-            await config.save();
-        }
-        res.json({ aantalTafels: config.aantalTafels });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij ophalen aantal tafels', error: err.message });
-    }
-});
-
-// 🛠️ NIEUW: PATCH aantal tafels aanpassen
-app.patch('/admin/tafel-aantal', async (req, res) => {
-    const { aantalTafels } = req.body;
-    if (typeof aantalTafels !== 'number' || aantalTafels < 1) {
-        return res.status(400).json({ message: '⛔ Ongeldig aantal tafels opgegeven.' });
-    }
-
-    try {
-        let config = await Config.findOne();
-        if (!config) {
-            config = new Config({ aantalTafels });
-        } else {
-            config.aantalTafels = aantalTafels;
-        }
-        await config.save();
-        res.json({ message: '✅ Aantal tafels geüpdatet', aantalTafels });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij updaten aantal tafels', error: err.message });
-    }
-});
-
 // 🆕 NIEUW: Tafels ophalen
 app.get('/admin/tables', async (req, res) => {
     try {
@@ -315,6 +275,7 @@ app.delete('/admin/table/:id', async (req, res) => {
         res.status(500).json({ message: '⛔ Fout bij verwijderen tafel', error: err.message });
     }
 });
+
 
 // 🚀 Server starten
 const port = process.env.PORT || 5000;
