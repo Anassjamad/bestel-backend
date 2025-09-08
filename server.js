@@ -54,6 +54,12 @@ const ConfigSchema = new mongoose.Schema({
 });
 const Config = mongoose.model('Config', ConfigSchema);
 
+// 🆕 Nieuw model voor tafels
+const TableSchema = new mongoose.Schema({
+    nummer: { type: Number, required: true, unique: true }
+});
+const Table = mongoose.model('Table', TableSchema);
+
 // 📡 Server-Sent Events (SSE)
 function sendNewOrderNotification(order) {
     const data = {
@@ -259,6 +265,54 @@ app.patch('/admin/tafel-aantal', async (req, res) => {
         res.json({ message: '✅ Aantal tafels geüpdatet', aantalTafels });
     } catch (err) {
         res.status(500).json({ message: '⛔ Fout bij updaten aantal tafels', error: err.message });
+    }
+});
+
+// 🆕 NIEUW: Tafels ophalen
+app.get('/admin/tables', async (req, res) => {
+    try {
+        const tables = await Table.find().sort({ nummer: 1 });
+        res.json(tables);
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij ophalen tafels', error: err.message });
+    }
+});
+
+// 🆕 NIEUW: Nieuwe tafel toevoegen
+app.post('/admin/table', async (req, res) => {
+    const { nummer } = req.body;
+
+    if (typeof nummer !== 'number' || nummer < 1) {
+        return res.status(400).json({ message: '⛔ Ongeldig tafelnummer' });
+    }
+
+    try {
+        // Check of tafelnummer al bestaat
+        const bestaat = await Table.findOne({ nummer });
+        if (bestaat) {
+            return res.status(400).json({ message: '⛔ Tafelnummer bestaat al' });
+        }
+
+        const table = new Table({ nummer });
+        await table.save();
+
+        res.status(201).json({ message: '✅ Tafel toegevoegd', table });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij toevoegen tafel', error: err.message });
+    }
+});
+
+// 🆕 NIEUW: Tafel verwijderen
+app.delete('/admin/table/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const deleted = await Table.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({ message: '❌ Tafel niet gevonden' });
+        }
+        res.json({ message: '✅ Tafel verwijderd' });
+    } catch (err) {
+        res.status(500).json({ message: '⛔ Fout bij verwijderen tafel', error: err.message });
     }
 });
 
