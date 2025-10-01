@@ -30,14 +30,14 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // ✅ Mongoose modellen
 
-// 🪑 Mongoose model voor tafels
-const Table = mongoose.model('Table', new mongoose.Schema({
+// 🪑 Mongoose model voor kiosken
+const Kiosk = mongoose.model('Kiosk', new mongoose.Schema({
     nummer: { type: Number, required: true, unique: true }
 }));
 
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
-    tafel: { type: String }, // ✅ tafel wordt opgeslagen
+    kiosk: { type: Number, required: true }, // ✅ kiosk wordt opgeslagen
     producten: [{
         item: { type: String, required: true },
         quantity: { type: Number, required: true },
@@ -55,9 +55,9 @@ const Product = mongoose.model('Product', new mongoose.Schema({
     image: { type: String, default: '' }
 }));
 
-// 🔧 Nieuw model voor config (aantal tafels)
+// 🔧 Nieuw model voor config (aantal kiosken)
 const ConfigSchema = new mongoose.Schema({
-    aantalTafels: { type: Number, required: true, default: 10 }
+    aantalKiosken: { type: Number, required: true, default: 10 }
 });
 const Config = mongoose.model('Config', ConfigSchema);
 
@@ -67,7 +67,7 @@ function sendNewOrderNotification(order) {
         orderId: order.orderId,
         producten: order.producten,
         status: order.status,
-        tafel: order.tafel,
+        kiosk: order.kiosk,
         createdAt: order.createdAt
     };
     clients.forEach(res => {
@@ -90,21 +90,20 @@ app.get('/admin/notifications', (req, res) => {
 
 // 📬 Bestelling plaatsen
 app.post('/order', async (req, res) => {
-    const { producten, tafel } = req.body;
+    const { producten, kiosk } = req.body;
 
     if (!producten || !Array.isArray(producten) || producten.length === 0) {
         return res.status(400).json({ message: '⛔ Productlijst is verplicht.' });
     }
 
-    // Optioneel: check dat tafel een geldige waarde heeft (string of nummer)
-    if (!tafel || tafel === '') {
-        return res.status(400).json({ message: '⛔ Tafelnummer is verplicht.' });
+    if (!kiosk || kiosk < 1) {
+        return res.status(400).json({ message: '⛔ Kiosknummer is verplicht.' });
     }
 
     const orderId = 'ORD-' + Date.now();
 
     try {
-        const order = new Order({ orderId, producten, tafel });
+        const order = new Order({ orderId, producten, kiosk });
         await order.save();
 
         sendNewOrderNotification(order);
@@ -144,7 +143,7 @@ app.get('/admin', async (req, res) => {
         const orders = await Order.find().sort({ createdAt: -1 });
 
         let html = `<table border="1"><tr>
-            <th>Order ID</th><th>Tafel</th><th>Item</th><th>Aantal</th>
+            <th>Order ID</th><th>Kiosk</th><th>Item</th><th>Aantal</th>
             <th>Opmerking</th><th>Tijd</th><th>Status</th>
         </tr>`;
 
@@ -152,7 +151,7 @@ app.get('/admin', async (req, res) => {
             order.producten.forEach(product => {
                 html += `<tr>
                     <td>${order.orderId}</td>
-                    <td>${order.tafel || ''}</td>
+                    <td>${order.kiosk}</td>
                     <td>${product.item}</td>
                     <td>${product.quantity}</td>
                     <td>${product.opmerking || ''}</td>
@@ -169,122 +168,13 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// 📅 Bestellingen op datum
-app.get('/admin/orders-by-date', async (req, res) => {
-    const { date } = req.query;
-
-    if (!date) {
-        return res.status(400).json({ message: '⛔ Datum is verplicht als query parameter (YYYY-MM-DD).' });
-    }
-
+// 🆕 NIEUW: Kiosken ophalen
+app.get('/admin/kiosken', async (req, res) => {
     try {
-        const start = new Date(date);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(date);
-        end.setHours(23, 59, 59, 999);
-
-        const orders = await Order.find({
-            createdAt: { $gte: start, $lte: end }
-        }).sort({ createdAt: 1 });
-
-        res.json(orders);
+        const kiosken = await Kiosk.find().sort({ nummer: 1 });
+        res.json(kiosken);
     } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij ophalen bestellingen op datum.', error: err.message });
-    }
-});
+        res.status(500).json({
+            message: '⛔ F
+:: contentReference[oaicite: 10]{ index=10 }
 
-// 🆕 Product toevoegen
-app.post('/admin/product', async (req, res) => {
-    const { naam, prijs, image } = req.body;
-
-    if (!naam || !prijs) {
-        return res.status(400).json({ message: '⛔ Naam en prijs zijn verplicht.' });
-    }
-
-    try {
-        const product = new Product({ naam, prijs, image });
-        await product.save();
-        res.json({ message: '✅ Product toegevoegd', product });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij toevoegen product', error: err.message });
-    }
-});
-
-// 📋 Producten ophalen
-app.get('/products', async (req, res) => {
-    try {
-        const producten = await Product.find().sort({ naam: 1 });
-        res.json(producten);
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Kan producten niet ophalen.' });
-    }
-});
-
-// 🗑️ Product verwijderen
-app.delete('/admin/product/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const deleted = await Product.findByIdAndDelete(id);
-        if (!deleted) {
-            return res.status(404).json({ message: '❌ Product niet gevonden.' });
-        }
-        res.json({ message: '✅ Product verwijderd' });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij verwijderen product', error: err.message });
-    }
-});
-
-// 🆕 NIEUW: Tafels ophalen
-app.get('/admin/tables', async (req, res) => {
-    try {
-        const tables = await Table.find().sort({ nummer: 1 });
-        res.json(tables);
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij ophalen tafels', error: err.message });
-    }
-});
-
-// 🆕 NIEUW: Nieuwe tafel toevoegen
-app.post('/admin/table', async (req, res) => {
-    const { nummer } = req.body;
-
-    if (typeof nummer !== 'number' || nummer < 1) {
-        return res.status(400).json({ message: '⛔ Ongeldig tafelnummer' });
-    }
-
-    try {
-        // Check of tafelnummer al bestaat
-        const bestaat = await Table.findOne({ nummer });
-        if (bestaat) {
-            return res.status(400).json({ message: '⛔ Tafelnummer bestaat al' });
-        }
-
-        const table = new Table({ nummer });
-        await table.save();
-
-        res.status(201).json({ message: '✅ Tafel toegevoegd', table });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij toevoegen tafel', error: err.message });
-    }
-});
-
-// 🆕 NIEUW: Tafel verwijderen
-app.delete('/admin/table/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const deleted = await Table.findByIdAndDelete(id);
-        if (!deleted) {
-            return res.status(404).json({ message: '❌ Tafel niet gevonden' });
-        }
-        res.json({ message: '✅ Tafel verwijderd' });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij verwijderen tafel', error: err.message });
-    }
-});
-
-
-// 🚀 Server starten
-const port = process.env.PORT || 5000;
-app.listen(port, () => {
-    console.log(`🚀 Server draait op http://localhost:${port}`);
-});
