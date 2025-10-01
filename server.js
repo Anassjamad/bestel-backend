@@ -8,14 +8,29 @@ require('dotenv').config();
 const app = express();
 let clients = [];
 
-// ✅ Middleware
-app.use(cors({
-    origin: '*',
+// ✅ CORS middleware, direct bovenaan
+const corsOptions = {
+    origin: '*', // Staat alle domeinen toe, pas eventueel aan naar jouw frontend URL voor veiligheid
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+};
+app.use(cors(corsOptions));
+
+// ✅ Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(cors({
+    origin: [
+        'https://qr-bestelpagina.vercel.app',
+        'https://bfe5-143-179-158-36.ngrok-free.app',
+        'https://bestel-backend.onrender.com',
+        'https://adminoa.vercel.app'
+    ],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 
 // ✅ Verbinding met MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
@@ -27,7 +42,8 @@ mongoose.connect(process.env.MONGODB_URI, {
 // ✅ Mongoose modellen
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
-    type: { type: String, enum: ['afhalen', 'ter plaatse'], required: true },
+    // Types aangepast naar frontend waarden 'takeaway' en 'pickup'
+    type: { type: String, enum: ['takeaway', 'pickup'], required: true },
     producten: [{
         item: { type: String, required: true },
         quantity: { type: Number, required: true },
@@ -81,6 +97,11 @@ app.get('/products', async (req, res) => {
     }
 });
 
+// Test route om CORS te checken
+app.get('/test-cors', (req, res) => {
+    res.json({ message: 'CORS werkt!' });
+});
+
 // 📬 Bestelling plaatsen
 app.post('/order', async (req, res) => {
     const { producten, type } = req.body;
@@ -89,8 +110,8 @@ app.post('/order', async (req, res) => {
         return res.status(400).json({ message: '⛔ Geen producten opgegeven.' });
     }
 
-    if (!type || !['afhalen', 'ter plaatse'].includes(type)) {
-        return res.status(400).json({ message: '⛔ Type (afhalen of ter plaatse) is verplicht.' });
+    if (!type || !['takeaway', 'pickup'].includes(type)) {
+        return res.status(400).json({ message: '⛔ Type (takeaway of pickup) is verplicht.' });
     }
 
     const orderId = 'ORD-' + Date.now();
