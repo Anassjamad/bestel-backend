@@ -6,6 +6,20 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+
+app.use(cors({
+    origin: [
+        'https://qr-bestelpagina.vercel.app',
+        'https://bfe5-143-179-158-36.ngrok-free.app',
+        'https://bestel-backend.onrender.com',
+        'https://adminoa.vercel.app',
+        'https://qr-bestelpagina.vercel.app/?kiosk=1'
+    ],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
+
 let clients = [];
 
 // ✅ CORS middleware, direct bovenaan
@@ -20,17 +34,6 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(cors({
-    origin: [
-        'https://qr-bestelpagina.vercel.app',
-        'https://bfe5-143-179-158-36.ngrok-free.app',
-        'https://bestel-backend.onrender.com',
-        'https://adminoa.vercel.app'
-    ],
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-}));
 
 // ✅ Verbinding met MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
