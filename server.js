@@ -7,33 +7,32 @@ require('dotenv').config();
 
 const app = express();
 
+// ✅ CORS middleware (1x en netjes)
+const allowedOrigins = [
+    'https://qr-bestelpagina.vercel.app',
+    'https://bfe5-143-179-158-36.ngrok-free.app',
+    'https://bestel-backend.onrender.com',
+    'https://adminoa.vercel.app'
+];
+
 app.use(cors({
-    origin: [
-        'https://qr-bestelpagina.vercel.app',
-        'https://bfe5-143-179-158-36.ngrok-free.app',
-        'https://bestel-backend.onrender.com',
-        'https://adminoa.vercel.app',
-        'https://qr-bestelpagina.vercel.app/?kiosk=1'
-    ],
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like Postman or curl)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = `De CORS policy staat '${origin}' niet toe.`;
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
 
-let clients = [];
-
-// ✅ CORS middleware, direct bovenaan
-const corsOptions = {
-    origin: '*', // Staat alle domeinen toe, pas eventueel aan naar jouw frontend URL voor veiligheid
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-};
-app.use(cors(corsOptions));
-
 // ✅ Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
 
 // ✅ Verbinding met MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
@@ -45,11 +44,10 @@ mongoose.connect(process.env.MONGODB_URI, {
 // ✅ Mongoose modellen
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
-    // Types aangepast naar frontend waarden 'takeaway' en 'pickup'
     type: { type: String, enum: ['takeaway', 'pickup'], required: true },
+    kiosk: { type: Number, required: true },  // kiosk op bestelling-niveau
     producten: [{
         item: { type: String, required: true },
-        kiosk: { type: Number, required: true }, 
         quantity: { type: Number, required: true },
         opmerking: { type: String }
     }],
@@ -65,10 +63,12 @@ const Product = mongoose.model('Product', new mongoose.Schema({
 }));
 
 // 📡 SSE - Real-time updates
+let clients = [];
 function sendNewOrderNotification(order) {
     const data = {
         orderId: order.orderId,
         type: order.type,
+        kiosk: order.kiosk,
         producten: order.producten,
         status: order.status,
         createdAt: order.createdAt
@@ -108,7 +108,7 @@ app.get('/test-cors', (req, res) => {
 
 // 📬 Bestelling plaatsen
 app.post('/order', async (req, res) => {
-    const { producten, type } = req.body;
+    const { producten, type, kiosk } = req.body;
 
     if (!producten || !Array.isArray(producten) || producten.length === 0) {
         return res.status(400).json({ message: '⛔ Geen producten opgegeven.' });
@@ -118,15 +118,20 @@ app.post('/order', async (req, res) => {
         return res.status(400).json({ message: '⛔ Type (takeaway of pickup) is verplicht.' });
     }
 
+    if (!kiosk || typeof kiosk !== 'number') {
+        return res.status(400).json({ message: '⛔ Kiosk nummer is verplicht en moet een nummer zijn.' });
+    }
+
     const orderId = 'ORD-' + Date.now();
 
     try {
-        const order = new Order({ orderId, producten, type });
+        const order = new Order({ orderId, producten, type, kiosk });
         await order.save();
 
         sendNewOrderNotification(order);
         res.json({ message: '✅ Bestelling geplaatst.', order });
     } catch (err) {
+        console.error('Fout bij opslaan bestelling:', err);
         res.status(500).json({ message: '⛔ Fout bij opslaan bestelling.', error: err.message });
     }
 });
@@ -157,7 +162,7 @@ app.get('/admin', async (req, res) => {
         const orders = await Order.find().sort({ createdAt: -1 });
 
         let html = `<h2>Overzicht Bestellingen</h2><table border="1"><tr>
-            <th>Order ID</th><th>Type</th><th>Item</th><th>Aantal</th>
+            <th>Order ID</th><th>Type</th><th>Kiosk</th><th>Item</th><th>Aantal</th>
             <th>Opmerking</th><th>Tijd</th><th>Status</th>
         </tr>`;
 
@@ -166,6 +171,7 @@ app.get('/admin', async (req, res) => {
                 html += `<tr>
                     <td>${order.orderId}</td>
                     <td>${order.type}</td>
+                    <td>${order.kiosk}</td>
                     <td>${product.item}</td>
                     <td>${product.quantity}</td>
                     <td>${product.opmerking || ''}</td>
