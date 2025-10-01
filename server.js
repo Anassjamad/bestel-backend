@@ -46,6 +46,7 @@ const OrderSchema = new mongoose.Schema({
     type: { type: String, enum: ['takeaway', 'pickup'], required: true },
     producten: [{
         item: { type: String, required: true },
+        kiosk: { type: Number, required: true }, 
         quantity: { type: Number, required: true },
         opmerking: { type: String }
     }],
