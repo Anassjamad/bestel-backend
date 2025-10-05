@@ -14,6 +14,7 @@ const allowedOrigins = [
     'https://qr-bestelpagina.vercel.app',
     'https://bfe5-143-179-158-36.ngrok-free.app',
     'https://bestel-backend.onrender.com',
+    'https://js.stripe.com/terminal/v1/terminal.mjs',
     'https://adminoa.vercel.app'
 ];
 
