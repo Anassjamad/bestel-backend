@@ -113,6 +113,31 @@ app.get('/products', async (req, res) => {
     }
 });
 
+// 📌 OA Logica product toevoegen (POST)
+app.post('/oa-logica/products', async (req, res) => {
+    const { naam, prijs, image, type, features } = req.body;
+
+    if (!naam || !prijs || !type) {
+        return res.status(400).json({ message: 'Naam, prijs en type zijn verplicht.' });
+    }
+
+    try {
+        const product = new OALogicaProduct({
+            naam,
+            prijs,
+            image: image || '',
+            type,
+            features: features || []
+        });
+
+        await product.save();
+        res.json({ message: '✅ Product toegevoegd!', product });
+    } catch (err) {
+        console.error('Fout bij toevoegen product:', err);
+        res.status(500).json({ message: '⛔ Fout bij toevoegen product.', error: err.message });
+    }
+});
+
 // ✅ OA Logica producten ophalen
 app.get('/oa-logica/products', async (req, res) => {
     try {
