@@ -15,12 +15,12 @@ const allowedOrigins = [
     'https://bfe5-143-179-158-36.ngrok-free.app',
     'https://bestel-backend.onrender.com',
     'https://js.stripe.com/terminal/v1/terminal.mjs',
-    'https://adminoa.vercel.app'
+    'https://adminoa.vercel.app',
+    'https://oalogica-site.vercel.app' // OA Logica frontend toegevoegd
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like Postman or curl)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) === -1) {
             const msg = `De CORS policy staat '${origin}' niet toe.`;
@@ -47,8 +47,8 @@ mongoose.connect(process.env.MONGODB_URI, {
 // ✅ Mongoose modellen
 const OrderSchema = new mongoose.Schema({
     orderId: { type: String, required: true },
-    type: { type: String, enum: ['takeaway', 'pickup'], required: true },
-    kiosk: { type: Number, required: true },  // kiosk op bestelling-niveau
+    type: { type: String, enum: ['takeaway', 'pickup', 'oa-logica'], required: true },
+    kiosk: { type: Number, default: 0 }, // kiosk op bestelling-niveau
     producten: [{
         item: { type: String, required: true },
         quantity: { type: Number, required: true },
@@ -63,6 +63,15 @@ const Product = mongoose.model('Product', new mongoose.Schema({
     naam: { type: String, required: true },
     prijs: { type: Number, required: true },
     image: { type: String, default: '' }
+}));
+
+// OA Logica Product model
+const OALogicaProduct = mongoose.model('OALogicaProduct', new mongoose.Schema({
+    naam: { type: String, required: true },
+    prijs: { type: Number, required: true },
+    image: { type: String, default: '' },
+    type: { type: String, enum: ['qr', 'kiosk', 'maatwerk'], required: true },
+    features: [{ type: String }]
 }));
 
 // 📡 SSE - Real-time updates
@@ -94,7 +103,7 @@ app.get('/admin/notifications', (req, res) => {
     });
 });
 
-// ✅ Producten ophalen
+// ✅ Producten ophalen (origineel)
 app.get('/products', async (req, res) => {
     try {
         const producten = await Product.find();
@@ -104,12 +113,18 @@ app.get('/products', async (req, res) => {
     }
 });
 
-// Test route om CORS te checken
-app.get('/test-cors', (req, res) => {
-    res.json({ message: 'CORS werkt!' });
+// ✅ OA Logica producten ophalen
+app.get('/oa-logica/products', async (req, res) => {
+    try {
+        const producten = await OALogicaProduct.find();
+        res.json(producten);
+    } catch (err) {
+        console.error('Fout bij ophalen OA Logica producten:', err);
+        res.status(500).json({ message: '⛔ Fout bij ophalen OA Logica producten.' });
+    }
 });
 
-// 📬 Bestelling plaatsen
+// 📬 Bestelling plaatsen (origineel)
 app.post('/order', async (req, res) => {
     const { producten, type, kiosk } = req.body;
 
@@ -139,6 +154,40 @@ app.post('/order', async (req, res) => {
     }
 });
 
+// 📬 OA Logica bestelling plaatsen
+app.post('/oa-logica/order', async (req, res) => {
+    const { naam, email, telefoon, opmerking, productId } = req.body;
+
+    if (!naam || !email || !productId) {
+        return res.status(400).json({ message: 'Naam, email en productId zijn verplicht.' });
+    }
+
+    try {
+        const product = await OALogicaProduct.findById(productId);
+        if (!product) return res.status(404).json({ message: 'Product niet gevonden.' });
+
+        const orderId = 'OAL-' + Date.now();
+
+        const order = new Order({
+            orderId,
+            type: 'oa-logica',
+            producten: [{
+                item: product.naam,
+                quantity: 1,
+                opmerking: opmerking || ''
+            }]
+        });
+
+        await order.save();
+        sendNewOrderNotification(order);
+
+        res.json({ message: '✅ Bestelling geplaatst!', order });
+    } catch (err) {
+        console.error('Fout bij OA Logica bestelling:', err);
+        res.status(500).json({ message: '⛔ Fout bij OA Logica bestelling.', error: err.message });
+    }
+});
+
 // 🔄 Status bijwerken (admin)
 app.patch('/admin/order/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
@@ -159,8 +208,7 @@ app.patch('/admin/order/:orderId/status', async (req, res) => {
     }
 });
 
-// Voeg bovenaan toe als stripe nog niet geïnitialiseerd is
-
+// connection_token (stripe)
 app.post('/connection_token', async (req, res) => {
     try {
         const token = await stripe.terminal.connectionTokens.create();
@@ -170,7 +218,6 @@ app.post('/connection_token', async (req, res) => {
         res.status(500).json({ error: 'Kon connection token niet aanmaken' });
     }
 });
-
 
 // 📋 Admin overzicht
 app.get('/admin', async (req, res) => {
@@ -204,9 +251,9 @@ app.get('/admin', async (req, res) => {
     }
 });
 
-// 📦 Betaling Intent aanmaken (nieuw endpoint)
+// 📦 Betaling Intent aanmaken (stripe)
 app.post('/create-payment-intent', async (req, res) => {
-    const { amount } = req.body; // het bedrag wordt in centen verstuurd, bijvoorbeeld 5000 = $50.00
+    const { amount } = req.body;
 
     if (!amount || isNaN(amount)) {
         return res.status(400).json({ message: '⛔ Ongeldig bedrag.' });
@@ -214,8 +261,8 @@ app.post('/create-payment-intent', async (req, res) => {
 
     try {
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount,  // Het bedrag in centen
-            currency: 'usd', // De valuta (USD in dit geval)
+            amount: amount,
+            currency: 'usd',
             payment_method_types: ['card'],
         });
 
