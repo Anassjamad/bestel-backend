@@ -1,4 +1,19 @@
-﻿// 📦 Vereiste modules
+﻿const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT),
+    secure: false, // false voor poort 587
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    },
+    tls: {
+        rejectUnauthorized: false // Nodig voor One.com om fouten te voorkomen
+    }
+});
+
+// 📦 Vereiste modules
 require('dotenv').config(); // Dit moet de allereerste regel zijn
 
 const express = require('express');
@@ -179,12 +194,27 @@ app.post('/order', async (req, res) => {
     }
 });
 
+async function sendOrderConfirmationEmail({ to, subject, html }) {
+    try {
+        await transporter.sendMail({
+            from: `"OA Logica" <${process.env.EMAIL_USER}>`,
+            to,
+            subject,
+            html
+        });
+        console.log(`✅ E-mail verzonden naar ${to}`);
+    } catch (err) {
+        console.error('⛔ Fout bij verzenden van e-mail:', err);
+    }
+}
+
+
 // 📬 OA Logica bestelling plaatsen
 app.post('/oa-logica/order', async (req, res) => {
-    const { naam, email, telefoon, opmerking, productId } = req.body;
+    const { naam, email, telefoon, productId, quantity, integratie, opmerking } = req.body;
 
-    if (!naam || !email || !productId) {
-        return res.status(400).json({ message: 'Naam, email en productId zijn verplicht.' });
+    if (!naam || !email || !productId || !quantity || !integratie) {
+        return res.status(400).json({ message: 'Naam, email, product, aantal en integratie zijn verplicht.' });
     }
 
     try {
@@ -198,15 +228,53 @@ app.post('/oa-logica/order', async (req, res) => {
             type: 'oa-logica',
             producten: [{
                 item: product.naam,
-                quantity: 1,
-                opmerking: opmerking || ''
-            }]
+                quantity: quantity,
+                opmerking: `${integratie}${opmerking ? ' — ' + opmerking : ''}`
+            }],
+            createdAt: new Date()
         });
 
         await order.save();
         sendNewOrderNotification(order);
 
+        // ✉️ Bevestigingsmail naar klant
+        const klantMail = `
+            <h2>Bedankt voor je bestelling, ${naam}!</h2>
+            <p>Je hebt ${quantity}x <strong>${product.naam}</strong> besteld.</p>
+            <p><strong>Integratie:</strong> ${integratie}</p>
+            <p><strong>Opmerking:</strong> ${opmerking || '-'}</p>
+            <p>We nemen spoedig contact met je op.</p>
+            <hr>
+            <p>Met vriendelijke groet,<br>OA Logica</p>
+        `;
+
+        await sendOrderConfirmationEmail({
+            to: email,
+            subject: `Bevestiging bestelling OA Logica – ${orderId}`,
+            html: klantMail
+        });
+
+        // ✉️ Kopie naar jouw e-mailadres
+        const adminMail = `
+            <h2>Nieuwe bestelling geplaatst</h2>
+            <p><strong>Naam:</strong> ${naam}</p>
+            <p><strong>E-mail:</strong> ${email}</p>
+            <p><strong>Telefoon:</strong> ${telefoon}</p>
+            <p><strong>Product:</strong> ${product.naam}</p>
+            <p><strong>Aantal:</strong> ${quantity}</p>
+            <p><strong>Integratie:</strong> ${integratie}</p>
+            <p><strong>Opmerking:</strong> ${opmerking || '-'}</p>
+            <p><strong>Order ID:</strong> ${orderId}</p>
+        `;
+
+        await sendOrderConfirmationEmail({
+            to: 'info@oalogica.nl',
+            subject: `📥 Nieuwe bestelling (${orderId}) van ${naam}`,
+            html: adminMail
+        });
+
         res.json({ message: '✅ Bestelling geplaatst!', order });
+
     } catch (err) {
         console.error('Fout bij OA Logica bestelling:', err);
         res.status(500).json({ message: '⛔ Fout bij OA Logica bestelling.', error: err.message });
