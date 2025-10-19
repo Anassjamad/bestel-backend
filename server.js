@@ -195,10 +195,9 @@ app.post('/order', async (req, res) => {
 });
 
 app.post('/oa-logica/order', async (req, res) => {
-    const { naam, email, telefoon, bedrijfsnaam, productId, quantity } = req.body;
-
-    if (!naam || !email || !productId)
-        return res.status(400).json({ message: 'Naam, email en product zijn verplicht.' });
+    const { naam, bedrijf, email, telefoon, productId, integrationType, kassaOptie, supportType } = req.body;
+    if (!naam || !bedrijf || !email || !productId)
+        return res.status(400).json({ message: 'Naam, bedrijfsnaam, email en product zijn verplicht.' });
 
     try {
         const product = await OALogicaProduct.findById(productId);
@@ -210,53 +209,50 @@ app.post('/oa-logica/order', async (req, res) => {
             type: 'oa-logica',
             producten: [{
                 item: product.naam,
-                quantity: quantity || 1,
-                opmerking: bedrijfsnaam || '-'
+                opmerking: `Integratie: ${integrationType || '-'}, Kassa: ${kassaOptie || '-'}, Support: ${supportType || '-'}`
             }]
         });
         await order.save();
         sendNewOrderNotification(order);
 
-        // ✉️ Klantmail
-        await sendBrevoEmail({
-            to: email,
-            subject: `Bevestiging aanvraag OA Logica – ${orderId}`,
-            html: `
-                <div style="font-family:Inter,sans-serif;background:#0f172a;color:#e6eef8;padding:20px;border-radius:12px;">
-                    <h2 style="color:#2563eb;">Bedankt voor je aanvraag, ${naam}!</h2>
-                    <p>Je hebt een aanvraag gedaan voor <strong>${product.naam}</strong>.</p>
-                    <p><strong>Bedrijfsnaam:</strong> ${bedrijfsnaam || '-'}</p>
-                    <p><strong>Aantal:</strong> ${quantity || 1}</p>
-                    <hr style="border:0;border-top:1px solid #2563eb;margin:12px 0;">
-                    <p>We nemen spoedig contact met je op.<br><strong>OA Logica</strong></p>
-                </div>
-            `
-        });
+        const htmlClient = `
+            <div style="font-family:Inter,sans-serif;color:#e6eef8;background:#0a0f1f;padding:24px;border-radius:16px;">
+                <h2 style="background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Bedankt voor je bestelling, ${naam}!</h2>
+                <p>Product: <strong>${product.naam}</strong></p>
+                <p>Integratie: <strong>${integrationType || '-'}</strong></p>
+                <p>Kassa: <strong>${kassaOptie || '-'}</strong></p>
+                <p>Support: <strong>${supportType || '-'}</strong></p>
+                <p>Bedrijf: <strong>${bedrijf}</strong></p>
+                <p>Telefoon: <strong>${telefoon || '-'}</strong></p>
+                <hr>
+                <p>We nemen spoedig contact met je op.<br><strong>OA Logica</strong></p>
+            </div>
+        `;
+        await sendBrevoEmail({ to: email, subject: `Bevestiging bestelling OA Logica – ${orderId}`, html: htmlClient });
 
-        // ✉️ Adminmail
-        await sendBrevoEmail({
-            to: 'info@oalogica.nl',
-            subject: `📥 Nieuwe aanvraag (${orderId}) van ${naam}`,
-            html: `
-                <div style="font-family:Inter,sans-serif;background:#0f172a;color:#e6eef8;padding:20px;border-radius:12px;">
-                    <h2 style="color:#7c3aed;">Nieuwe aanvraag ontvangen</h2>
-                    <p><strong>Naam:</strong> ${naam}</p>
-                    <p><strong>Email:</strong> ${email}</p>
-                    <p><strong>Telefoon:</strong> ${telefoon || '-'}</p>
-                    <p><strong>Bedrijfsnaam:</strong> ${bedrijfsnaam || '-'}</p>
-                    <p><strong>Product:</strong> ${product.naam}</p>
-                    <p><strong>Aantal:</strong> ${quantity || 1}</p>
-                    <p><strong>Order ID:</strong> ${orderId}</p>
-                </div>
-            `
-        });
+        const htmlAdmin = `
+            <div style="font-family:Inter,sans-serif;color:#e6eef8;background:#0a0f1f;padding:24px;border-radius:16px;">
+                <h2>Nieuwe bestelling geplaatst</h2>
+                <p>Order ID: <strong>${orderId}</strong></p>
+                <p>Naam: <strong>${naam}</strong></p>
+                <p>Bedrijf: <strong>${bedrijf}</strong></p>
+                <p>Email: <strong>${email}</strong></p>
+                <p>Telefoon: <strong>${telefoon || '-'}</strong></p>
+                <p>Product: <strong>${product.naam}</strong></p>
+                <p>Integratie: <strong>${integrationType || '-'}</strong></p>
+                <p>Kassa: <strong>${kassaOptie || '-'}</strong></p>
+                <p>Support: <strong>${supportType || '-'}</strong></p>
+            </div>
+        `;
+        await sendBrevoEmail({ to: 'info@oalogica.nl', subject: `📥 Nieuwe bestelling (${orderId}) van ${naam}`, html: htmlAdmin });
 
-        res.json({ message: '✅ Aanvraag geplaatst!', order });
+        res.json({ message: '✅ Bestelling geplaatst!', order });
     } catch (err) {
-        console.error('Fout bij OA Logica bestelling:', err);
-        res.status(500).json({ message: '⛔ Fout bij OA Logica bestelling.' });
+        console.error('Fout bij bestelling:', err);
+        res.status(500).json({ message: '⛔ Fout bij bestelling.' });
     }
 });
+
 
 // 🟢 Server starten
 const PORT = process.env.PORT || 3000;
