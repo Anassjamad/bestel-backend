@@ -71,10 +71,10 @@ const Product = mongoose.model('Product', new mongoose.Schema({
 
 const OALogicaProduct = mongoose.model('OALogicaProduct', new mongoose.Schema({
     naam: { type: String, required: true },
-    prijs: { type: Number, required: true },
     image: { type: String, default: '' },
     type: { type: String, enum: ['qr', 'kiosk', 'maatwerk'], required: true },
-    features: [{ type: String }]
+    features: [{ type: String }],
+    requiresIntegration: { type: Boolean, default: true }
 }));
 
 // 📡 SSE real-time updates
@@ -113,8 +113,8 @@ app.get('/products', async (req, res) => {
 });
 
 app.post('/oa-logica/products', async (req, res) => {
-    const { naam, prijs, image, type, features, requiresIntegration } = req.body;
-    if (!naam || !prijs || !type) return res.status(400).json({ message: 'Naam, prijs en type zijn verplicht.' });
+    const { naam, image, type, features, requiresIntegration } = req.body;
+    if (!naam || !type) return res.status(400).json({ message: 'Naam en type zijn verplicht.' });
 
     try {
         const product = new OALogicaProduct({
@@ -122,7 +122,7 @@ app.post('/oa-logica/products', async (req, res) => {
             image: image || '',
             type,
             features: features || [],
-            requiresIntegration: requiresIntegration !== undefined ? requiresIntegration : true // default true
+            requiresIntegration: requiresIntegration !== undefined ? requiresIntegration : true
         });
         await product.save();
         res.json({ message: '✅ Product toegevoegd!', product });
