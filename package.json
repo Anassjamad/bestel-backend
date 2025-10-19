@@ -16,6 +16,7 @@
     "express": "^5.1.0",
     "mongoose": "^8.15.0",
     "nodemailer": "^7.0.9",
+    "sib-api-v3-sdk": "^8.5.0",
     "stripe": "^19.1.0"
   },
   "description": ""
