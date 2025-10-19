@@ -226,7 +226,8 @@ app.post('/oa-logica/order', async (req, res) => {
             orderId,
             type: 'oa-logica',
             producten: [{
-                item: product.naam,
+                item: product.naam, quantity: 1,
+
                 opmerking: `Integratie: ${integrationType || '-'}, Kassa: ${kassaOptie || '-'}, Support: ${supportType || '-'}`
             }]
         });
