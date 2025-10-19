@@ -113,16 +113,34 @@ app.get('/products', async (req, res) => {
 });
 
 app.post('/oa-logica/products', async (req, res) => {
-    const { naam, prijs, image, type, features } = req.body;
+    const { naam, prijs, image, type, features, requiresIntegration } = req.body;
     if (!naam || !prijs || !type) return res.status(400).json({ message: 'Naam, prijs en type zijn verplicht.' });
 
     try {
-        const product = new OALogicaProduct({ naam, prijs, image: image || '', type, features: features || [] });
+        const product = new OALogicaProduct({
+            naam,
+            image: image || '',
+            type,
+            features: features || [],
+            requiresIntegration: requiresIntegration !== undefined ? requiresIntegration : true // default true
+        });
         await product.save();
         res.json({ message: '✅ Product toegevoegd!', product });
     } catch (err) {
         console.error('Fout bij toevoegen product:', err);
         res.status(500).json({ message: '⛔ Fout bij toevoegen product.' });
+    }
+});
+
+app.delete('/oa-logica/products/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const product = await OALogicaProduct.findByIdAndDelete(id);
+        if (!product) return res.status(404).json({ message: 'Product niet gevonden.' });
+        res.json({ message: '✅ Product verwijderd!', product });
+    } catch (err) {
+        console.error('Fout bij verwijderen product:', err);
+        res.status(500).json({ message: '⛔ Fout bij verwijderen product.' });
     }
 });
 
