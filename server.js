@@ -21,7 +21,7 @@ const allowedOrigins = [
     'https://bestel-backend.onrender.com',
     'https://js.stripe.com/terminal/v1/terminal.mjs',
     'https://adminoa.vercel.app',
-    'https://https://www.oalogica.nl',
+    'https://www.oalogica.nl',
     'https://oalogica-site.vercel.app'
 ];
 
