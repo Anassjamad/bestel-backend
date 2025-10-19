@@ -152,6 +152,29 @@ async function sendBrevoEmail({ to, subject, html }) {
     }
 }
 
+// 🧪 Test route om e-mail te controleren
+app.get('/test-email', async (req, res) => {
+    const to = req.query.to;
+    if (!to) return res.status(400).json({ message: 'Voeg een ?to=<emailadres> toe aan de URL.' });
+
+    try {
+        await sendBrevoEmail({
+            to,
+            subject: '✅ Testmail van OA Logica via Brevo',
+            html: `
+                <h2>Hallo!</h2>
+                <p>Als je dit bericht ontvangt, werkt je Brevo-integratie correct 🎉</p>
+                <hr>
+                <p>Verzonden via: <strong>Render + Brevo API</strong></p>
+            `
+        });
+        res.json({ message: `✅ Testmail verzonden naar ${to}` });
+    } catch (err) {
+        console.error('Test e-mail fout:', err);
+        res.status(500).json({ message: '⛔ Fout bij verzenden testmail.' });
+    }
+});
+
 // 📦 Bestelling plaatsen
 app.post('/order', async (req, res) => {
     const { producten, type, kiosk } = req.body;
@@ -171,11 +194,12 @@ app.post('/order', async (req, res) => {
     }
 });
 
-// 📬 OA Logica bestelling met bevestiging
+// 📬 OA Logica bestelling / offerte
 app.post('/oa-logica/order', async (req, res) => {
-    const { naam, email, telefoon, productId, quantity, integratie, opmerking } = req.body;
-    if (!naam || !email || !productId || !quantity || !integratie)
-        return res.status(400).json({ message: 'Naam, email, product, aantal en integratie zijn verplicht.' });
+    const { naam, email, telefoon, productId, quantity, integratie, bedrijfsnaam } = req.body;
+
+    if (!naam || !email || !productId || !bedrijfsnaam)
+        return res.status(400).json({ message: 'Naam, email, product en bedrijfsnaam zijn verplicht.' });
 
     try {
         const product = await OALogicaProduct.findById(productId);
@@ -185,108 +209,57 @@ app.post('/oa-logica/order', async (req, res) => {
         const order = new Order({
             orderId,
             type: 'oa-logica',
-            producten: [{ item: product.naam, quantity, opmerking: `${integratie}${opmerking ? ' — ' + opmerking : ''}` }]
+            producten: [
+                {
+                    item: product.naam,
+                    quantity: quantity || 0,
+                    opmerking: bedrijfsnaam
+                }
+            ]
         });
         await order.save();
         sendNewOrderNotification(order);
 
-        // ✉️ Klantmail
+        // ✉️ Klantbevestiging email (stijl website)
         await sendBrevoEmail({
             to: email,
-            subject: `Bevestiging bestelling OA Logica – ${orderId}`,
+            subject: `Bevestiging offerte OA Logica – ${orderId}`,
             html: `
-                <h2>Bedankt voor je bestelling, ${naam}!</h2>
-                <p>Je hebt ${quantity}x <strong>${product.naam}</strong> besteld.</p>
-                <p><strong>Integratie:</strong> ${integratie}</p>
-                <p><strong>Opmerking:</strong> ${opmerking || '-'}</p>
-                <hr><p>We nemen spoedig contact met je op.<br>Met vriendelijke groet,<br><strong>OA Logica</strong></p>
+            <div style="font-family:Inter,sans-serif;background:#0f172a;color:#e6eef8;padding:30px;border-radius:16px;max-width:600px;margin:auto;">
+                <h2 style="color:#7c3aed;">Bedankt voor je aanvraag, ${naam}!</h2>
+                <p style="font-size:16px;">We hebben je aanvraag voor <strong>${product.naam}</strong> ontvangen.</p>
+                <table style="width:100%;margin-top:16px;border-collapse:collapse;">
+                    <tr><td style="padding:8px;font-weight:600;">Bedrijfsnaam:</td><td style="padding:8px;">${bedrijfsnaam}</td></tr>
+                    ${quantity ? `<tr><td style="padding:8px;font-weight:600;">Aantal:</td><td style="padding:8px;">${quantity}</td></tr>` : ''}
+                    ${integratie ? `<tr><td style="padding:8px;font-weight:600;">Integratie:</td><td style="padding:8px;">${integratie}</td></tr>` : ''}
+                </table>
+                <p style="margin-top:20px;">We nemen spoedig contact met je op om de details te bespreken.</p>
+                <p>Met vriendelijke groet,<br><strong>OA Logica</strong></p>
+            </div>
             `
         });
 
         // ✉️ Adminmail
         await sendBrevoEmail({
             to: 'info@oalogica.nl',
-            subject: `📥 Nieuwe bestelling (${orderId}) van ${naam}`,
+            subject: `📥 Nieuwe offerte aanvraag (${orderId}) van ${naam}`,
             html: `
-                <h2>Nieuwe bestelling geplaatst</h2>
+                <h2>Nieuwe offerte aanvraag</h2>
                 <p><strong>Naam:</strong> ${naam}</p>
-                <p><strong>E-mail:</strong> ${email}</p>
-                <p><strong>Telefoon:</strong> ${telefoon}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                <p><strong>Telefoon:</strong> ${telefoon || '-'}</p>
+                <p><strong>Bedrijfsnaam:</strong> ${bedrijfsnaam}</p>
                 <p><strong>Product:</strong> ${product.naam}</p>
-                <p><strong>Aantal:</strong> ${quantity}</p>
-                <p><strong>Integratie:</strong> ${integratie}</p>
-                <p><strong>Opmerking:</strong> ${opmerking || '-'}</p>
+                ${quantity ? `<p><strong>Aantal:</strong> ${quantity}</p>` : ''}
+                ${integratie ? `<p><strong>Integratie:</strong> ${integratie}</p>` : ''}
                 <p><strong>Order ID:</strong> ${orderId}</p>
             `
         });
 
-        res.json({ message: '✅ Bestelling geplaatst!', order });
+        res.json({ message: '✅ Offerte aangevraagd!', order });
     } catch (err) {
-        console.error('Fout bij OA Logica bestelling:', err);
-        res.status(500).json({ message: '⛔ Fout bij OA Logica bestelling.' });
-    }
-});
-
-// 🔄 Status update
-app.patch('/admin/order/:orderId/status', async (req, res) => {
-    const { orderId } = req.params;
-    const { status } = req.body;
-    if (!status) return res.status(400).json({ message: '⛔ Status is verplicht.' });
-
-    try {
-        const order = await Order.findOneAndUpdate({ orderId }, { status }, { new: true });
-        if (!order) return res.status(404).json({ message: '❌ Bestelling niet gevonden.' });
-        res.json({ message: '✅ Status bijgewerkt', status: order.status });
-    } catch (err) {
-        res.status(500).json({ message: '⛔ Fout bij updaten status.' });
-    }
-});
-
-// Stripe
-app.post('/connection_token', async (req, res) => {
-    try {
-        const token = await stripe.terminal.connectionTokens.create();
-        res.json({ secret: token.secret });
-    } catch {
-        res.status(500).json({ error: 'Kon connection token niet aanmaken' });
-    }
-});
-
-// Admin overzicht
-app.get('/admin', async (req, res) => {
-    try {
-        const orders = await Order.find().sort({ createdAt: -1 });
-        let html = `<h2>Overzicht Bestellingen</h2><table border="1"><tr>
-            <th>Order ID</th><th>Type</th><th>Kiosk</th><th>Item</th><th>Aantal</th>
-            <th>Opmerking</th><th>Tijd</th><th>Status</th></tr>`;
-        orders.forEach(order => {
-            order.producten.forEach(p => {
-                html += `<tr><td>${order.orderId}</td><td>${order.type}</td><td>${order.kiosk}</td>
-                    <td>${p.item}</td><td>${p.quantity}</td><td>${p.opmerking || ''}</td>
-                    <td>${new Date(order.createdAt).toLocaleString()}</td><td>${order.status}</td></tr>`;
-            });
-        });
-        html += '</table>';
-        res.send(html);
-    } catch {
-        res.status(500).send('⛔ Fout bij ophalen bestellingen.');
-    }
-});
-
-// PaymentIntent
-app.post('/create-payment-intent', async (req, res) => {
-    const { amount } = req.body;
-    if (!amount || isNaN(amount)) return res.status(400).json({ message: '⛔ Ongeldig bedrag.' });
-
-    try {
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount,
-            currency: 'usd',
-            payment_method_types: ['card']
-        });
-        res.json({ clientSecret: paymentIntent.client_secret });
-    } catch {
-        res.status(500).json({ message: '⛔ Fout bij aanmaken PaymentIntent.' });
+        console.error('Fout bij OA Logica bestelling/offerte:', err);
+        res.status(500).json({ message: '⛔ Er is iets misgegaan bij het aanvragen van de offerte.' });
     }
 });
 
