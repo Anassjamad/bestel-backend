@@ -235,17 +235,47 @@ app.post('/oa-logica/order', async (req, res) => {
         sendNewOrderNotification(order);
 
         const htmlClient = `
-            <div style="font-family:Inter,sans-serif;color:#e6eef8;background:#0a0f1f;padding:24px;border-radius:16px;">
-                <h2 style="background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Bedankt voor je bestelling, ${naam}!</h2>
-                <p>Product: <strong>${product.naam}</strong></p>
-                <p>Integratie: <strong>${integrationType || '-'}</strong></p>
-                <p>Kassa: <strong>${kassaOptie || '-'}</strong></p>
-                <p>Support: <strong>${supportType || '-'}</strong></p>
-                <p>Bedrijf: <strong>${bedrijf}</strong></p>
-                <p>Telefoon: <strong>${telefoon || '-'}</strong></p>
-                <hr>
-                <p>We nemen spoedig contact met je op.<br><strong>OA Logica</strong></p>
-            </div>
+         <div style="font-family:Inter,sans-serif;color:#e6eef8;background:#0a0f1f;padding:32px;border-radius:16px;max-width:600px;margin:auto;">
+    <!-- Header -->
+    <div style="text-align:center;margin-bottom:32px;">
+        <h1 style="margin:0;font-size:2rem;background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:700;">
+            Bedankt voor je bestelling, ${naam}!
+        </h1>
+        <p style="margin:8px 0 0;color:#94a3b8;">Hieronder vind je de details van jouw bestelling bij OA Logica</p>
+    </div>
+
+    <!-- Product Info -->
+    <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <h2 style="margin:0 0 12px;font-size:1.2rem;color:#7c3aed;">Productinformatie</h2>
+        <p style="margin:4px 0;"><strong>Product:</strong> ${product.naam}</p>
+        <p style="margin:4px 0;"><strong>Integratie:</strong> ${integrationType || '-'}</p>
+        <p style="margin:4px 0;"><strong>Kassa:</strong> ${kassaOptie || '-'}</p>
+        <p style="margin:4px 0;"><strong>Support:</strong> ${supportType || '-'}</p>
+    </div>
+
+    <!-- Klant Info -->
+    <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <h2 style="margin:0 0 12px;font-size:1.2rem;color:#2563eb;">Jouw gegevens</h2>
+        <p style="margin:4px 0;"><strong>Bedrijf:</strong> ${bedrijf}</p>
+        <p style="margin:4px 0;"><strong>Telefoon:</strong> ${telefoon || '-'}</p>
+        <p style="margin:4px 0;"><strong>Email:</strong> ${email}</p>
+    </div>
+
+    <!-- Call to Action -->
+    <div style="text-align:center;margin-bottom:32px;">
+        <a href="https://oalogica-site.vercel.app/contact.html" style="display:inline-block;padding:14px 24px;border-radius:12px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:white;font-weight:600;text-decoration:none;box-shadow:0 0 12px rgba(37,99,235,0.5);transition:all 0.3s;">Neem contact op</a>
+    </div>
+
+    <!-- Footer -->
+    <hr style="border:none;border-top:1px solid #2c3e50;margin:32px 0;">
+    <p style="font-size:0.85rem;color:#94a3b8;text-align:center;margin:0;">
+        OA Logica — Ontwikkelend & Automatiserend<br>
+        <strong>Email:</strong> info@oalogica.nl | <strong>Tel:</strong> +31 123 456 789
+    </p>
+    <p style="font-size:0.75rem;color:#555;text-align:center;margin-top:4px;">
+        &copy; 2025 OA Logica. Alle rechten voorbehouden.
+    </p>
+</div>
         `;
         await sendBrevoEmail({ to: email, subject: `Bevestiging bestelling OA Logica – ${orderId}`, html: htmlClient });
 
