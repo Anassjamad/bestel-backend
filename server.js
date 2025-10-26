@@ -322,7 +322,7 @@ app.post('/create_payment_intent', async (req, res) => {
         return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
 
     try {
-        // ✅ Maak PaymentIntent aan
+        // Maak PaymentIntent aan
         const paymentIntent = await stripe.paymentIntents.create({
             amount,          // in centen
             currency: 'eur',
@@ -330,29 +330,13 @@ app.post('/create_payment_intent', async (req, res) => {
             metadata: { orderId }
         });
 
-        // 🔹 Stuur alles terug wat de app nodig heeft om te betalen
+        // Stuur alles terug wat de app nodig heeft om te betalen
         res.json({
             clientSecret: paymentIntent.client_secret,
-            status: paymentIntent.status,      // 'requires_payment_method', 'requires_confirmation', 'succeeded'
+            status: paymentIntent.status,
             amount: paymentIntent.amount,
             currency: paymentIntent.currency
         });
-    } catch (err) {
-        console.error('Fout bij maken PaymentIntent:', err);
-        res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
-    }
-});    const { orderId, amount } = req.body;
-    if (!orderId || !amount) return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
-
-    try {
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount,          // in centen
-            currency: 'eur',
-            automatic_payment_methods: { enabled: true },
-            metadata: { orderId }
-        });
-
-        res.json({ clientSecret: paymentIntent.client_secret });
     } catch (err) {
         console.error('Fout bij maken PaymentIntent:', err);
         res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
