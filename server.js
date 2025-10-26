@@ -307,3 +307,13 @@ app.post('/oa-logica/order', async (req, res) => {
 // 🟢 Server starten
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
+
+app.post('/connection_token', async (req, res) => {
+    try {
+        const token = await stripe.terminal.connectionTokens.create();
+        res.json({ secret: token.secret });
+    } catch (error) {
+        console.error('Fout bij aanmaken connection token:', error);
+        res.status(500).json({ error: 'Kon connection token niet aanmaken' });
+    }
+});
