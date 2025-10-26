@@ -303,10 +303,8 @@ app.post('/oa-logica/order', async (req, res) => {
     }
 });
 
-
 // 🟢 Server starten
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
+
 
 app.post('/connection_token', async (req, res) => {
     try {
@@ -317,3 +315,25 @@ app.post('/connection_token', async (req, res) => {
         res.status(500).json({ error: 'Kon connection token niet aanmaken' });
     }
 });
+
+app.post('/create_payment_intent', async (req, res) => {
+    const { orderId, amount } = req.body;
+    if (!orderId || !amount) return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
+
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount,          // in centen
+            currency: 'eur',
+            automatic_payment_methods: { enabled: true },
+            metadata: { orderId }
+        });
+
+        res.json({ clientSecret: paymentIntent.client_secret });
+    } catch (err) {
+        console.error('Fout bij maken PaymentIntent:', err);
+        res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
