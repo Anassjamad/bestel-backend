@@ -325,7 +325,7 @@ app.get('/payment_intent_created', (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    clients.push(res);
+    Intentclients.push(res);
 
     req.on('close', () => {
         const index = Intentclients.indexOf(res);
@@ -336,7 +336,7 @@ app.get('/payment_intent_created', (req, res) => {
 
 function notifyPaymentIntentCreated(orderId, amount) {
     const data = { orderId, amount };
-    clients.forEach(res => {
+    Intentclients.forEach(res => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     });
 }
@@ -368,6 +368,38 @@ app.post('/create_payment_intent', async (req, res) => {
         console.error('Fout bij maken PaymentIntent:', err);
         res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
     }
+});
+
+let paidClients = [];
+
+app.get('/payment_confirmed', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    paidClients.push(res);
+
+    req.on('close', () => {
+        const index = paidClients.indexOf(res);
+        if (index !== -1) paidClients.splice(index, 1);
+    });
+});
+
+function notifyPaymentConfirmed(orderId) {
+    const data = { orderId, status: 'paid' };
+    paidClients.forEach(res => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    });
+}
+
+// App roept dit aan na succesvolle betaling
+app.post('/confirm_payment', (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: 'orderId vereist' });
+
+    notifyPaymentConfirmed(orderId);
+    res.json({ success: true });
 });
 
 
