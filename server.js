@@ -317,7 +317,7 @@ app.post('/connection_token', async (req, res) => {
 });
 
 // SSE clients bewaren
-const clients = [];
+const Intentclients = [];
 
 app.get('/payment_intent_created', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -328,8 +328,8 @@ app.get('/payment_intent_created', (req, res) => {
     clients.push(res);
 
     req.on('close', () => {
-        const index = clients.indexOf(res);
-        if (index !== -1) clients.splice(index, 1);
+        const index = Intentclients.indexOf(res);
+        if (index !== -1) Intentclients.splice(index, 1);
     });
 });
 
