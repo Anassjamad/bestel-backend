@@ -316,21 +316,48 @@ app.post('/connection_token', async (req, res) => {
     }
 });
 
+// SSE clients bewaren
+const clients = [];
+
+app.get('/payment_intent_created', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    clients.push(res);
+
+    req.on('close', () => {
+        const index = clients.indexOf(res);
+        if (index !== -1) clients.splice(index, 1);
+    });
+});
+
+
+function notifyPaymentIntentCreated(orderId, amount) {
+    const data = { orderId, amount };
+    clients.forEach(res => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    });
+}
+
+// In je bestaande /create_payment_intent endpoint:
 app.post('/create_payment_intent', async (req, res) => {
     const { orderId, amount } = req.body;
     if (!orderId || !amount)
         return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
 
     try {
-        // Maak PaymentIntent aan
         const paymentIntent = await stripe.paymentIntents.create({
-            amount,          // in centen
+            amount,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
             metadata: { orderId }
         });
 
-        // Stuur alles terug wat de app nodig heeft om te betalen
+        // Notificatie naar app via SSE
+        notifyPaymentIntentCreated(orderId, amount);
+
         res.json({
             clientSecret: paymentIntent.client_secret,
             status: paymentIntent.status,
@@ -342,6 +369,7 @@ app.post('/create_payment_intent', async (req, res) => {
         res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
     }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
