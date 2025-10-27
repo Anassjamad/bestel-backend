@@ -386,6 +386,30 @@ app.get('/payment_confirmed', (req, res) => {
     });
 });
 
+app.post("/payment_status_update", (req, res) => {
+    const { orderId, status, message } = req.body;
+    latestPaymentStatus[orderId] = { status, message };
+
+    // Stuur live update naar verbonden kiosks
+    clients.forEach(client => client.res.write(`data: ${JSON.stringify({ orderId, status, message })}\n\n`));
+
+    res.json({ ok: true });
+});
+
+app.get("/payment_status", (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const clientId = Date.now();
+    const newClient = { id: clientId, res };
+    clients.push(newClient);
+
+    req.on("close", () => {
+        clients = clients.filter(c => c.id !== clientId);
+    });
+});
+
 function notifyPaymentConfirmed(orderId) {
     const data = { orderId, status: 'paid' };
     paidClients.forEach(res => {
