@@ -311,6 +311,16 @@ const paymentStatus = {}; // { orderId: { status: 'pending'|'paid'|'failed', mes
 let paymentClients = []; // Frontend SSE connecties (bijv. kiosk websites)
 let appClients = []; // App SSE connecties (bijv. betaalterminal)
 
+app.post('/connection_token', async (req, res) => {
+    try {
+        const token = await stripe.terminal.connectionTokens.create();
+        res.json({ secret: token.secret });
+    } catch (error) {
+        console.error('❌ Fout bij aanmaken connection token:', error);
+        res.status(500).json({ error: 'Kon connection token niet aanmaken' });
+    }
+});
+
 
 // -------------------- SSE endpoint voor PaymentIntent --------------------
 app.get('/payment_intent_created', (req, res) => {
