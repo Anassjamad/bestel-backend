@@ -303,47 +303,31 @@ app.post('/oa-logica/order', async (req, res) => {
     }
 });
 
-// 🟢 Server starten
 
+// 🟢 🔄 BETALINGSSYSTEEM (NIEUWE IMPLEMENTATIE)
 
+const paymentStatus = {}; // { orderId: { status: 'pending'|'paid'|'failed', message: string } }
+let paymentClients = []; // Frontend SSE connecties (bijv. kiosk websites)
+let appClients = []; // App SSE connecties (bijv. betaalterminal)
+
+//
+// 📡 Stripe Terminal connection token
+//
 app.post('/connection_token', async (req, res) => {
     try {
         const token = await stripe.terminal.connectionTokens.create();
         res.json({ secret: token.secret });
     } catch (error) {
-        console.error('Fout bij aanmaken connection token:', error);
+        console.error('❌ Fout bij aanmaken connection token:', error);
         res.status(500).json({ error: 'Kon connection token niet aanmaken' });
     }
 });
 
-// SSE clients bewaren
-const Intentclients = [];
-
-app.get('/payment_intent_created', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    Intentclients.push(res);
-
-    req.on('close', () => {
-        const index = Intentclients.indexOf(res);
-        if (index !== -1) Intentclients.splice(index, 1);
-    });
-});
-
-
-function notifyPaymentIntentCreated(orderId, amount) {
-    const data = { orderId, amount };
-    Intentclients.forEach(res => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-    });
-}
-
-// In je bestaande /create_payment_intent endpoint:
+//
+// 🧾 Website maakt nieuwe betaling aan
+//
 app.post('/create_payment_intent', async (req, res) => {
-    const { orderId, amount } = req.body;
+    const { orderId, amount, kiosk, items, orderType } = req.body;
     if (!orderId || !amount)
         return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
 
@@ -352,80 +336,115 @@ app.post('/create_payment_intent', async (req, res) => {
             amount,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
-            metadata: { orderId }
+            metadata: { orderId, kiosk, orderType }
         });
 
-        // Notificatie naar app via SSE
-        notifyPaymentIntentCreated(orderId, amount);
+        // Zet status op "pending"
+        paymentStatus[orderId] = { status: 'pending', message: 'Wachten op betaling...' };
+
+        // Breng app op de hoogte
+        appClients.forEach(c =>
+            c.res.write(`data: ${JSON.stringify({ orderId, amount, status: 'pending' })}\n\n`)
+        );
+
+        console.log(`🧾 Nieuwe PaymentIntent aangemaakt (${orderId}) – €${amount / 100}`);
 
         res.json({
+            success: true,
             clientSecret: paymentIntent.client_secret,
-            status: paymentIntent.status,
-            amount: paymentIntent.amount,
-            currency: paymentIntent.currency
+            orderId,
+            status: 'pending'
         });
     } catch (err) {
-        console.error('Fout bij maken PaymentIntent:', err);
-        res.status(500).json({ message: '⛔ Fout bij maken PaymentIntent.' });
+        console.error('❌ Fout bij aanmaken PaymentIntent:', err);
+        res.status(500).json({ message: '⛔ Fout bij aanmaken PaymentIntent.' });
     }
 });
 
-let paidClients = [];
-
-app.get('/payment_confirmed', (req, res) => {
+//
+// 📡 App luistert voor nieuwe betalingen
+//
+app.get('/payment_intent_stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    paidClients.push(res);
+    const client = { id: Date.now(), res };
+    appClients.push(client);
+    console.log(`📲 App verbonden (${client.id})`);
 
     req.on('close', () => {
-        const index = paidClients.indexOf(res);
-        if (index !== -1) paidClients.splice(index, 1);
+        appClients = appClients.filter(c => c.id !== client.id);
+        console.log(`📴 App ontkoppeld (${client.id})`);
     });
 });
 
-app.post("/payment_status_update", (req, res) => {
-    const { orderId, status, message } = req.body;
-    latestPaymentStatus[orderId] = { status, message };
+//
+// 🟢 Frontend luistert op betaalstatus (SSE)
+//
+app.get('/payment_status', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
-    // Stuur live update naar verbonden kiosks
-    clients.forEach(client => client.res.write(`data: ${JSON.stringify({ orderId, status, message })}\n\n`));
+    const client = { id: Date.now(), res };
+    paymentClients.push(client);
+    console.log(`💻 Frontend verbonden (${client.id})`);
 
-    res.json({ ok: true });
-});
-
-app.get("/payment_status", (req, res) => {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-
-    const clientId = Date.now();
-    const newClient = { id: clientId, res };
-    clients.push(newClient);
-
-    req.on("close", () => {
-        clients = clients.filter(c => c.id !== clientId);
+    req.on('close', () => {
+        paymentClients = paymentClients.filter(c => c.id !== client.id);
+        console.log(`💻 Frontend afgesloten (${client.id})`);
     });
 });
 
-function notifyPaymentConfirmed(orderId) {
-    const data = { orderId, status: 'paid' };
-    paidClients.forEach(res => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-    });
+//
+// 📤 Helper om statusupdates te broadcasten
+//
+function broadcastStatus(orderId, status, message) {
+    const payload = { orderId, status, message };
+    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify(payload)}\n\n`));
+    console.log(`📡 Statusupdate: ${orderId} → ${status}`);
 }
 
-// App roept dit aan na succesvolle betaling
-app.post('/confirm_payment', (req, res) => {
-    const { orderId } = req.body;
-    if (!orderId) return res.status(400).json({ message: 'orderId vereist' });
+//
+// 📲 App geeft statusupdate door
+//
+app.post('/update_payment_status', (req, res) => {
+    const { orderId, status, message } = req.body;
+    if (!orderId || !status)
+        return res.status(400).json({ message: 'orderId en status verplicht' });
 
-    notifyPaymentConfirmed(orderId);
+    paymentStatus[orderId] = { status, message: message || '' };
+    broadcastStatus(orderId, status, message);
+
     res.json({ success: true });
 });
 
+//
+// 🔁 Opnieuw proberen (frontend roept dit aan)
+//
+app.post('/retry_payment', (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: 'orderId verplicht' });
 
+    paymentStatus[orderId] = { status: 'pending', message: 'Opnieuw proberen...' };
+    broadcastStatus(orderId, 'pending', 'Opnieuw proberen...');
+
+    console.log(`🔁 Opnieuw proberen: ${orderId}`);
+    res.json({ success: true });
+});
+
+//
+// 🧪 Debug endpoint
+//
+app.get('/debug/payment_status', (req, res) => {
+    res.json(paymentStatus);
+});
+
+//
+// 🟩 Server starten
+//
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
