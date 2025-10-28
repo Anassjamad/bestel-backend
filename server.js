@@ -311,26 +311,41 @@ const paymentStatus = {}; // { orderId: { status: 'pending'|'paid'|'failed', mes
 let paymentClients = []; // Frontend SSE connecties (bijv. kiosk websites)
 let appClients = []; // App SSE connecties (bijv. betaalterminal)
 
-//
-// 📡 Stripe Terminal connection token
-//
-app.post('/connection_token', async (req, res) => {
-    try {
-        const token = await stripe.terminal.connectionTokens.create();
-        res.json({ secret: token.secret });
-    } catch (error) {
-        console.error('❌ Fout bij aanmaken connection token:', error);
-        res.status(500).json({ error: 'Kon connection token niet aanmaken' });
-    }
+
+// -------------------- SSE endpoint voor PaymentIntent --------------------
+app.get('/payment_intent_created', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const client = { id: Date.now(), res };
+    paymentClients.push(client);
+    console.log(`📡 SSE client verbonden (${client.id})`);
+
+    req.on('close', () => {
+        const index = paymentClients.findIndex(c => c.id === client.id);
+        if (index !== -1) paymentClients.splice(index, 1);
+        console.log(`📴 SSE client ontkoppeld (${client.id})`);
+    });
 });
 
-//
-// 🧾 Website maakt nieuwe betaling aan
-//
+// -------------------- Helper om SSE updates te sturen --------------------
+function broadcastPaymentIntent(intent) {
+    const payload = {
+        orderId: intent.metadata.orderId,
+        amount: intent.amount,
+        status: 'pending'
+    };
+
+    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify(payload)}\n\n`));
+    console.log(`📡 PaymentIntent broadcast: ${payload.orderId} (€${payload.amount / 100})`);
+}
+
+// -------------------- Nieuwe betaling aanmaken --------------------
 app.post('/create_payment_intent', async (req, res) => {
     const { orderId, amount, kiosk, items, orderType } = req.body;
-    if (!orderId || !amount)
-        return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
+    if (!orderId || !amount) return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
 
     try {
         const paymentIntent = await stripe.paymentIntents.create({
@@ -340,15 +355,10 @@ app.post('/create_payment_intent', async (req, res) => {
             metadata: { orderId, kiosk, orderType }
         });
 
-        // Zet status op "pending"
         paymentStatus[orderId] = { status: 'pending', message: 'Wachten op betaling...' };
 
-        // Breng app op de hoogte
-        appClients.forEach(c =>
-            c.res.write(`data: ${JSON.stringify({ orderId, amount, status: 'pending' })}\n\n`)
-        );
-
-        console.log(`🧾 Nieuwe PaymentIntent aangemaakt (${orderId}) – €${amount / 100}`);
+        // SSE broadcast naar alle connected clients
+        broadcastPaymentIntent(paymentIntent);
 
         res.json({
             success: true,
@@ -362,90 +372,22 @@ app.post('/create_payment_intent', async (req, res) => {
     }
 });
 
-//
-// 📡 App luistert voor nieuwe betalingen
-//
-app.get('/payment_intent_stream', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    const client = { id: Date.now(), res };
-    appClients.push(client);
-    console.log(`📲 App verbonden (${client.id})`);
-
-    req.on('close', () => {
-        appClients = appClients.filter(c => c.id !== client.id);
-        console.log(`📴 App ontkoppeld (${client.id})`);
-    });
-});
-
-//
-// 🟢 Frontend luistert op betaalstatus (SSE)
-//
-app.get('/payment_status', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    const client = { id: Date.now(), res };
-    paymentClients.push(client);
-    console.log(`💻 Frontend verbonden (${client.id})`);
-
-    req.on('close', () => {
-        paymentClients = paymentClients.filter(c => c.id !== client.id);
-        console.log(`💻 Frontend afgesloten (${client.id})`);
-    });
-});
-
-//
-// 📤 Helper om statusupdates te broadcasten
-//
-function broadcastStatus(orderId, status, message) {
-    const payload = { orderId, status, message };
-    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify(payload)}\n\n`));
-    console.log(`📡 Statusupdate: ${orderId} → ${status}`);
-}
-
-//
-// 📲 App geeft statusupdate door
-//
+// -------------------- Payment status update (optioneel) --------------------
 app.post('/update_payment_status', (req, res) => {
     const { orderId, status, message } = req.body;
-    if (!orderId || !status)
-        return res.status(400).json({ message: 'orderId en status verplicht' });
+    if (!orderId || !status) return res.status(400).json({ message: 'orderId en status verplicht' });
 
     paymentStatus[orderId] = { status, message: message || '' };
-    broadcastStatus(orderId, status, message);
+
+    // push update naar SSE clients
+    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify({ orderId, status, message })}\n\n`));
 
     res.json({ success: true });
 });
 
-//
-// 🔁 Opnieuw proberen (frontend roept dit aan)
-//
-app.post('/retry_payment', (req, res) => {
-    const { orderId } = req.body;
-    if (!orderId) return res.status(400).json({ message: 'orderId verplicht' });
+// -------------------- Debug endpoint --------------------
+app.get('/debug/payment_status', (req, res) => res.json(paymentStatus));
 
-    paymentStatus[orderId] = { status: 'pending', message: 'Opnieuw proberen...' };
-    broadcastStatus(orderId, 'pending', 'Opnieuw proberen...');
-
-    console.log(`🔁 Opnieuw proberen: ${orderId}`);
-    res.json({ success: true });
-});
-
-//
-// 🧪 Debug endpoint
-//
-app.get('/debug/payment_status', (req, res) => {
-    res.json(paymentStatus);
-});
-
-//
-// 🟩 Server starten
-//
+// -------------------- Server starten --------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server actief op poort ${PORT}`));
