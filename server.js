@@ -14,31 +14,38 @@ const brevoClient = SibApiV3Sdk.ApiClient.instance;
 brevoClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
 const brevoEmailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
-// ✅ CORS
+// ✅ CORS FIX
+
 const allowedOrigins = [
     'https://qr-bestelpagina.vercel.app',
     'https://bfe5-143-179-158-36.ngrok-free.app',
     'https://bestel-backend.onrender.com',
-    'https://js.stripe.com/terminal/v1/terminal.mjs',
+    'https://js.stripe.com',
     'https://adminoa.vercel.app',
     'https://www.oalogica.nl',
     'https://oalogica-site.vercel.app'
 ];
 
+app.use((req, res, next) => {
+    console.log('🌍 CORS check:', req.headers.origin);
+    next();
+});
+
 app.use(cors({
     origin: function (origin, callback) {
+        // Sta requests zonder origin toe (zoals Postman of curl)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = `De CORS policy staat '${origin}' niet toe.`;
-            return callback(new Error(msg), false);
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        } else {
+            console.warn(`❌ Geblokkeerde CORS-origin: ${origin}`);
+            return callback(new Error(`CORS blocked: ${origin}`), false);
         }
-        return callback(null, true);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    credentials: true,
 }));
-
 // ⚠️ Let op: Stripe webhooks gebruiken raw body — zet parsers in de juiste volgorde
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
