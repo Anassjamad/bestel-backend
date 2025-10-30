@@ -39,6 +39,8 @@ app.use(cors({
     credentials: true
 }));
 
+// ⚠️ Let op: Stripe webhooks gebruiken raw body — zet parsers in de juiste volgorde
+app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -78,7 +80,7 @@ const OALogicaProduct = mongoose.model('OALogicaProduct', new mongoose.Schema({
     requiresIntegration: { type: Boolean, default: true }
 }));
 
-// 📡 SSE real-time updates
+// 📡 SSE real-time updates (bestellingen)
 let clients = [];
 function sendNewOrderNotification(order) {
     const data = {
@@ -228,7 +230,6 @@ app.post('/oa-logica/order', async (req, res) => {
             type: 'oa-logica',
             producten: [{
                 item: product.naam, quantity: 1,
-
                 opmerking: `Integratie: ${integrationType || '-'}, Kassa: ${kassaOptie || '-'}, Support: ${supportType || '-'}`
             }]
         });
@@ -237,47 +238,37 @@ app.post('/oa-logica/order', async (req, res) => {
 
         const htmlClient = `
          <div style="font-family:Inter,sans-serif;color:#e6eef8;background:#0a0f1f;padding:32px;border-radius:16px;max-width:600px;margin:auto;">
-    <!-- Header -->
-    <div style="text-align:center;margin-bottom:32px;">
-        <h1 style="margin:0;font-size:2rem;background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:700;">
-            Bedankt voor je bestelling, ${naam}!
-        </h1>
-        <p style="margin:8px 0 0;color:#94a3b8;">Hieronder vind je de details van jouw bestelling bij OA Logica</p>
-    </div>
-
-    <!-- Product Info -->
-    <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
-        <h2 style="margin:0 0 12px;font-size:1.2rem;color:#7c3aed;">Productinformatie</h2>
-        <p style="margin:4px 0;"><strong>Product:</strong> ${product.naam}</p>
-        <p style="margin:4px 0;"><strong>Integratie:</strong> ${integrationType || '-'}</p>
-        <p style="margin:4px 0;"><strong>Kassa:</strong> ${kassaOptie || '-'}</p>
-        <p style="margin:4px 0;"><strong>Support:</strong> ${supportType || '-'}</p>
-    </div>
-
-    <!-- Klant Info -->
-    <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
-        <h2 style="margin:0 0 12px;font-size:1.2rem;color:#2563eb;">Jouw gegevens</h2>
-        <p style="margin:4px 0;"><strong>Bedrijf:</strong> ${bedrijf}</p>
-        <p style="margin:4px 0;"><strong>Telefoon:</strong> ${telefoon || '-'}</p>
-        <p style="margin:4px 0;"><strong>Email:</strong> ${email}</p>
-    </div>
-
-    <!-- Call to Action -->
-    <div style="text-align:center;margin-bottom:32px;">
-        <a href="https://oalogica-site.vercel.app/contact.html" style="display:inline-block;padding:14px 24px;border-radius:12px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:white;font-weight:600;text-decoration:none;box-shadow:0 0 12px rgba(37,99,235,0.5);transition:all 0.3s;">Neem contact op</a>
-    </div>
-
-    <!-- Footer -->
-    <hr style="border:none;border-top:1px solid #2c3e50;margin:32px 0;">
-    <p style="font-size:0.85rem;color:#94a3b8;text-align:center;margin:0;">
-        OA Logica — Ontwikkelend & Automatiserend<br>
-        <strong>Email:</strong> info@oalogica.nl | <strong>Tel:</strong> +31 123 456 789
-    </p>
-    <p style="font-size:0.75rem;color:#555;text-align:center;margin-top:4px;">
-        &copy; 2025 OA Logica. Alle rechten voorbehouden.
-    </p>
-</div>
-        `;
+            <div style="text-align:center;margin-bottom:32px;">
+                <h1 style="margin:0;font-size:2rem;background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:700;">
+                    Bedankt voor je bestelling, ${naam}!
+                </h1>
+                <p style="margin:8px 0 0;color:#94a3b8;">Hieronder vind je de details van jouw bestelling bij OA Logica</p>
+            </div>
+            <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                <h2 style="margin:0 0 12px;font-size:1.2rem;color:#7c3aed;">Productinformatie</h2>
+                <p style="margin:4px 0;"><strong>Product:</strong> ${product.naam}</p>
+                <p style="margin:4px 0;"><strong>Integratie:</strong> ${integrationType || '-'}</p>
+                <p style="margin:4px 0;"><strong>Kassa:</strong> ${kassaOptie || '-'}</p>
+                <p style="margin:4px 0;"><strong>Support:</strong> ${supportType || '-'}</p>
+            </div>
+            <div style="background:#1a2236;padding:20px;border-radius:12px;margin-bottom:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                <h2 style="margin:0 0 12px;font-size:1.2rem;color:#2563eb;">Jouw gegevens</h2>
+                <p style="margin:4px 0;"><strong>Bedrijf:</strong> ${bedrijf}</p>
+                <p style="margin:4px 0;"><strong>Telefoon:</strong> ${telefoon || '-'}</p>
+                <p style="margin:4px 0;"><strong>Email:</strong> ${email}</p>
+            </div>
+            <div style="text-align:center;margin-bottom:32px;">
+                <a href="https://oalogica-site.vercel.app/contact.html" style="display:inline-block;padding:14px 24px;border-radius:12px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:white;font-weight:600;text-decoration:none;box-shadow:0 0 12px rgba(37,99,235,0.5);transition:all 0.3s;">Neem contact op</a>
+            </div>
+            <hr style="border:none;border-top:1px solid #2c3e50;margin:32px 0;">
+            <p style="font-size:0.85rem;color:#94a3b8;text-align:center;margin:0;">
+                OA Logica — Ontwikkelend & Automatiserend<br>
+                <strong>Email:</strong> info@oalogica.nl | <strong>Tel:</strong> +31 123 456 789
+            </p>
+            <p style="font-size:0.75rem;color:#555;text-align:center;margin-top:4px;">
+                &copy; 2025 OA Logica. Alle rechten voorbehouden.
+            </p>
+        </div>`;
         await sendBrevoEmail({ to: email, subject: `Bevestiging bestelling OA Logica – ${orderId}`, html: htmlClient });
 
         const htmlAdmin = `
@@ -292,8 +283,7 @@ app.post('/oa-logica/order', async (req, res) => {
                 <p>Integratie: <strong>${integrationType || '-'}</strong></p>
                 <p>Kassa: <strong>${kassaOptie || '-'}</strong></p>
                 <p>Support: <strong>${supportType || '-'}</strong></p>
-            </div>
-        `;
+            </div>`;
         await sendBrevoEmail({ to: 'info@oalogica.nl', subject: `📥 Nieuwe bestelling (${orderId}) van ${naam}`, html: htmlAdmin });
 
         res.json({ message: '✅ Bestelling geplaatst!', order });
@@ -303,14 +293,12 @@ app.post('/oa-logica/order', async (req, res) => {
     }
 });
 
-// 🟢 Server starten
-
-// 🟢 🔄 BETALINGSSYSTEEM (NIEUWE IMPLEMENTATIE)
-
-const paymentStatus = {}; // { orderId: { status: 'pending'|'paid'|'failed', message: string } }
+// 🟢 🔄 BETALINGSSYSTEEM
+const paymentStatus = {}; // { orderId: { status, message } }
 let paymentClients = []; // Frontend SSE connecties (bijv. kiosk websites)
 let appClients = []; // App SSE connecties (bijv. betaalterminal)
 
+// Stripe Terminal: connection token
 app.post('/connection_token', async (req, res) => {
     try {
         const token = await stripe.terminal.connectionTokens.create();
@@ -321,8 +309,7 @@ app.post('/connection_token', async (req, res) => {
     }
 });
 
-
-// -------------------- SSE endpoint voor PaymentIntent --------------------
+// SSE stream voor PaymentIntent events (frontend + app kunnen hierop luisteren)
 app.get('/payment_intent_created', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -340,19 +327,24 @@ app.get('/payment_intent_created', (req, res) => {
     });
 });
 
-// -------------------- Helper om SSE updates te sturen --------------------
+// Helper om SSE updates te sturen
 function broadcastPaymentIntent(intent) {
     const payload = {
         orderId: intent.metadata.orderId,
         amount: intent.amount,
         status: 'pending'
     };
-
     paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify(payload)}\n\n`));
     console.log(`📡 PaymentIntent broadcast: ${payload.orderId} (€${payload.amount / 100})`);
 }
 
-// -------------------- Nieuwe betaling aanmaken --------------------
+function broadcastStatus({ orderId, status, message }) {
+    const payload = { orderId, status, message };
+    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify(payload)}\n\n`));
+    console.log(`📡 Status update: ${orderId} -> ${status}${message ? ' (' + message + ')' : ''}`);
+}
+
+// Nieuwe betaling aanmaken (backend -> Stripe PI) en broadcast naar app via SSE
 app.post('/create_payment_intent', async (req, res) => {
     const { orderId, amount, kiosk, items, orderType } = req.body;
     if (!orderId || !amount) return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
@@ -362,12 +354,10 @@ app.post('/create_payment_intent', async (req, res) => {
             amount,
             currency: 'eur',
             automatic_payment_methods: { enabled: true },
-            metadata: { orderId, kiosk, orderType }
+            metadata: { orderId, kiosk: kiosk || '', orderType: orderType || '' }
         });
 
         paymentStatus[orderId] = { status: 'pending', message: 'Wachten op betaling...' };
-
-        // SSE broadcast naar alle connected clients
         broadcastPaymentIntent(paymentIntent);
 
         res.json({
@@ -382,21 +372,90 @@ app.post('/create_payment_intent', async (req, res) => {
     }
 });
 
-// -------------------- Payment status update (optioneel) --------------------
+// Frontend API: betaling starten (zelfde als create_payment_intent)
+app.post('/api/frontend/start-payment', async (req, res) => {
+    const { orderId, amount, kiosk } = req.body;
+    if (!orderId || !amount) return res.status(400).json({ message: 'Order ID en bedrag zijn verplicht.' });
+
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount,
+            currency: 'eur',
+            automatic_payment_methods: { enabled: true },
+            metadata: { orderId, kiosk: kiosk || '' }
+        });
+
+        paymentStatus[orderId] = { status: 'pending', message: 'Betaling gestart via frontend.' };
+        broadcastPaymentIntent(paymentIntent);
+        res.json({ success: true, orderId, clientSecret: paymentIntent.client_secret, status: 'pending' });
+    } catch (err) {
+        console.error('❌ Fout bij start-payment:', err);
+        res.status(500).json({ message: 'Fout bij starten van betaling.' });
+    }
+});
+
+// Frontend API: annuleren
+app.post('/api/frontend/cancel-payment', async (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: 'orderId is verplicht' });
+
+    paymentStatus[orderId] = { status: 'cancelled', message: 'Betaling geannuleerd door gebruiker.' };
+    broadcastStatus({ orderId, status: 'cancelled', message: 'Geannuleerd via frontend.' });
+    res.json({ success: true, message: 'Betaling geannuleerd.' });
+});
+
+// Frontend API: handmatige bevestiging (optioneel)
+app.post('/api/frontend/confirm-payment', async (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: 'orderId is verplicht' });
+
+    paymentStatus[orderId] = { status: 'paid', message: 'Betaling succesvol afgerond via frontend.' };
+    broadcastStatus({ orderId, status: 'paid', message: 'Frontend bevestiging' });
+    res.json({ success: true, message: 'Betaling succesvol bevestigd.' });
+});
+
+// Status update (app -> backend)
 app.post('/update_payment_status', (req, res) => {
     const { orderId, status, message } = req.body;
     if (!orderId || !status) return res.status(400).json({ message: 'orderId en status verplicht' });
 
     paymentStatus[orderId] = { status, message: message || '' };
-
-    // push update naar SSE clients
-    paymentClients.forEach(c => c.res.write(`data: ${JSON.stringify({ orderId, status, message })}\n\n`));
-
+    broadcastStatus({ orderId, status, message });
     res.json({ success: true });
 });
 
-// -------------------- Debug endpoint --------------------
+// Debug
 app.get('/debug/payment_status', (req, res) => res.json(paymentStatus));
+
+// (Optioneel) Stripe webhook voor echte status sync
+app.post('/webhook', (req, res) => {
+    try {
+        const sig = req.headers['stripe-signature'];
+        const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+
+        if (event.type === 'payment_intent.succeeded') {
+            const intent = event.data.object;
+            const orderId = intent.metadata?.orderId;
+            if (orderId) {
+                paymentStatus[orderId] = { status: 'paid', message: 'Stripe bevestigde betaling.' };
+                broadcastStatus({ orderId, status: 'paid', message: 'Stripe webhook' });
+            }
+        }
+        if (event.type === 'payment_intent.payment_failed') {
+            const intent = event.data.object;
+            const orderId = intent.metadata?.orderId;
+            const msg = intent.last_payment_error?.message || 'Onbekende fout';
+            if (orderId) {
+                paymentStatus[orderId] = { status: 'failed', message: msg };
+                broadcastStatus({ orderId, status: 'failed', message: msg });
+            }
+        }
+        res.json({ received: true });
+    } catch (err) {
+        console.error('⚠️ Webhook fout:', err.message);
+        res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+});
 
 // -------------------- Server starten --------------------
 const PORT = process.env.PORT || 3000;
